@@ -59,9 +59,10 @@ def _load_fills(cands: list[dict], start_ms: int, end_ms: int) -> dict[str, list
         if len(f) >= hl.MAX_FILLS:
             print(f"  [{i}/{len(cands)}] {_short(c['address'])}: zu viele Trades (Hochfrequenz), uebersprungen")
             continue
-        out[c["address"]] = f
         print(f"  [{i}/{len(cands)}] {_short(c['address'])}: {len(f)} Fills")
-        time.sleep(0.3)
+        if f:  # Konten ohne Trades im Zeitraum (z. B. nur Halten) bringen keine Signale
+            out[c["address"]] = f
+        time.sleep(1.0)  # Hyperliquid begrenzt die Anfragen pro Minute
     return out
 
 
@@ -87,7 +88,8 @@ def scan(cfg: Config, days: int = 30, top: int = 40, keep: int = 5) -> list[dict
 
 
 def test(cfg: Config, train_days: int = 30, test_days: int = 10, windows: int = 5, top: int = 40,
-         keep: int = 5, interval: str = "15m", delay_s: int = 60, min_t: float = 1.5) -> dict:
+         keep: int = 5, interval: str = "15m", delay_s: int = 60, min_t: float = 0.5,
+         min_opens: float = 0.05) -> dict:
     """Walk-Forward: Trader nur mit vergangenen Daten auswaehlen, ihre Trades danach mit Verzoegerung kopieren."""
     end = _now_ms()
     test_start = end - windows * test_days * DAY_MS
@@ -120,10 +122,10 @@ def test(cfg: Config, train_days: int = 30, test_days: int = 10, windows: int = 
         te_end = te_start + test_days * DAY_MS
         scores = sorted((score_trader(a, f, tr_start, te_start) for a, f in fills.items()),
                         key=lambda s: s.score, reverse=True)
-        chosen = [s for s in scores if s.t_stat >= min_t and s.opens_per_day >= 0.2][:keep]
+        chosen = [s for s in scores if s.t_stat >= min_t and s.opens_per_day >= min_opens and s.pnl > 0][:keep]
         if not chosen and scores:  # Diagnose: warum niemand bestanden hat
             best = scores[:3]
-            print(f"  Fenster {w + 1}: niemand erfuellt t-Wert >= {min_t} und >= 0,2 Eroeffnungen/Tag. Beste: " +
+            print(f"  Fenster {w + 1}: niemand erfuellt t-Wert >= {min_t} und >= {min_opens} Eroeffnungen/Tag. Beste: " +
                   ", ".join(f"{_short(x.address)} t={x.t_stat:.2f} Eroeffn./Tag={x.opens_per_day:.2f} "
                             f"Gewinn={x.pnl:,.0f}$" for x in best))
         w_trades, w_own = [], 0.0

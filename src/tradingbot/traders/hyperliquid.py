@@ -30,7 +30,7 @@ def _ssl_context() -> ssl.SSLContext:
 _SSL = _ssl_context()  # Hyperliquid liefert nur die letzten 10.000 Fills eines Kontos
 
 
-def _request(url: str, payload: dict | None = None, retries: int = 4):
+def _request(url: str, payload: dict | None = None, retries: int = 7):
     data = None if payload is None else json.dumps(payload).encode()
     for attempt in range(retries):
         try:
@@ -38,8 +38,8 @@ def _request(url: str, payload: dict | None = None, retries: int = 4):
             with urllib.request.urlopen(req, timeout=30, context=_SSL) as r:
                 return json.loads(r.read())
         except urllib.error.HTTPError as e:
-            if e.code == 429 and attempt < retries - 1:  # Rate Limit: kurz warten
-                time.sleep(2 ** attempt)
+            if e.code == 429 and attempt < retries - 1:  # Rate Limit: warten, jedes Mal laenger (bis ~1 min)
+                time.sleep(min(60, 2 * 2 ** attempt))
                 continue
             raise
         except urllib.error.URLError:
