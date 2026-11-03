@@ -55,6 +55,25 @@ Krypto laeuft rund um die Uhr, man kann Bruchteile kaufen (z. B. 0.0008 BTC), un
 (0,1 % pro Seite in `config/crypto.yaml`). Der Krypto-Testlauf speichert seinen Stand getrennt in `data/crypto/`,
 kann also gleichzeitig mit dem Futures-Testlauf laufen.
 
+### Top-Trader kopieren (Hyperliquid, nur Paper Trading)
+
+Auf Hyperliquid sind Positionen und Trades aller Konten oeffentlich. Der Bot nutzt das so:
+
+```bash
+./copy-trading.sh scan        # beste Trader der letzten 30 Tage finden und bewerten
+./copy-trading.sh test        # ehrlicher Test: Auswahl mit alten Daten, Kopieren mit 60 s Verzoegerung danach
+./copy-trading.sh watch       # Paper-Copy-Trading mit 20 $ Spielgeld
+./copy-trading.sh dashboard   # Dashboard dazu auf http://localhost:8052
+```
+
+- **Vorauswahl:** Konto >= 50.000 $, Gewinn im letzten Monat und insgesamt, kein Hochfrequenz-Handel
+  (Monatsvolumen hoechstens 150x Kontowert, sonst ist es meist ein Market Maker, den man nicht kopieren kann).
+- **Bewertung:** Gewinn-Tage, Gewinn-Wochen, t-Wert (> 2 = eher kein Zufall), Anzahl neuer Positionen pro Tag.
+- **Kopieren:** Nur neue Positionen (nicht Nachkaeufe). Unser Risk Manager setzt SL/TP mit RR 1:3.
+  Schliesst der Trader, steigen wir auch aus.
+- **Grenzen:** Das Leaderboard zeigt nur heute existierende Konten (Survivorship Bias). Hyperliquid hat eine
+  Mindestorder von 10 $. Mit 20 $ geht das nur mit Hebel; der Paper-Bot ueberspringt kleinere Orders.
+
 ### Live-Dashboard
 
 In einem zweiten Terminalfenster (der Paper-Bot muss laufen):
@@ -106,6 +125,7 @@ src/tradingbot/
   execution/             Broker-Schnittstelle + Paper Broker
   bot.py                 Paper-Trading-Schleife
   dashboard/             Live-Dashboard (lokaler Webserver + Seite)
+  traders/               Hyperliquid: Leaderboard, Trader-Bewertung, Copy-Test, Paper-Copy-Trading
   cli.py                 Kommandozeile
 config/config.example.yaml
 tests/

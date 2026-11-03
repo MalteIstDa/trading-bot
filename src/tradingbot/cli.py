@@ -83,6 +83,17 @@ def cmd_dashboard(args, cfg):
     serve(args.port, not args.no_browser)
 
 
+def cmd_traders(args, cfg):
+    from tradingbot.traders import runner
+    if args.action == "scan":
+        runner.scan(cfg, days=args.days, top=args.top, keep=args.keep)
+    elif args.action == "test":
+        runner.test(cfg, train_days=args.days, test_days=args.test_days, windows=args.windows,
+                    top=args.top, keep=args.keep, delay_s=args.delay)
+    else:
+        runner.watch(cfg, poll_seconds=args.poll)
+
+
 def main(argv=None):
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--config", default=argparse.SUPPRESS,
@@ -104,6 +115,16 @@ def main(argv=None):
     sp = sub.add_parser("dashboard", help="Live-Dashboard im Browser")
     sp.add_argument("--port", type=int, default=8050)
     sp.add_argument("--no-browser", action="store_true")
+    sp = sub.add_parser("traders", parents=[common], help="Top-Trader auf Hyperliquid analysieren und kopieren")
+    sp.add_argument("action", choices=["scan", "test", "watch"],
+                    help="scan = beste Trader finden, test = ehrlicher Kopier-Test, watch = Paper-Copy-Trading")
+    sp.add_argument("--days", type=int, default=30, help="Tage fuer die Bewertung (Standard 30)")
+    sp.add_argument("--test-days", type=int, default=10, help="test: Tage pro Kopier-Fenster")
+    sp.add_argument("--windows", type=int, default=5, help="test: Anzahl Fenster")
+    sp.add_argument("--top", type=int, default=40, help="Anzahl Kandidaten aus dem Leaderboard")
+    sp.add_argument("--keep", type=int, default=5, help="Anzahl Trader, die kopiert werden")
+    sp.add_argument("--delay", type=int, default=60, help="test: Sekunden Verzoegerung beim Kopieren")
+    sp.add_argument("--poll", type=int, default=60, help="watch: Sekunden zwischen Abfragen")
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = load_config(getattr(args, "config", None))
@@ -117,7 +138,7 @@ def main(argv=None):
     if args.cmd in ("backtest", "select"):
         print(f"Kerzen: {cfg.timeframe}, Historie: {cfg.history_period}, Ausstieg: {cfg.risk.exit_mode}")
     {"backtest": cmd_backtest, "select": cmd_select, "paper": cmd_paper,
-     "dashboard": cmd_dashboard}[args.cmd](args, cfg)
+     "dashboard": cmd_dashboard, "traders": cmd_traders}[args.cmd](args, cfg)
 
 
 if __name__ == "__main__":

@@ -42,6 +42,13 @@ class PaperBroker(Broker):
         self.positions[symbol] = plan
         self.save()
 
+    def close(self, symbol: str, price: float, reason: str = "manual") -> dict | None:
+        """Position sofort zum angegebenen Preis schliessen (z. B. wenn der kopierte Trader aussteigt)."""
+        plan = self.positions.get(symbol)
+        if not plan:
+            return None
+        return self._settle(symbol, plan, price, reason)
+
     def on_price(self, symbol: str, high: float, low: float, close: float) -> list[dict]:
         plan = self.positions.get(symbol)
         if not plan:
@@ -52,6 +59,9 @@ class PaperBroker(Broker):
             self.save()
             return []
         reason, exit_px = res
+        return [self._settle(symbol, plan, exit_px, reason)]
+
+    def _settle(self, symbol: str, plan: OrderPlan, exit_px: float, reason: str) -> dict:
         pv = self.point_values.get(symbol, 1.0)
         fees = 2 * self.fee + self.fee_pct / 100 * (plan.entry + exit_px) * plan.contracts * pv
         pnl = (exit_px - plan.entry) * plan.side * plan.contracts * pv - fees
@@ -59,7 +69,7 @@ class PaperBroker(Broker):
         self._equity += pnl
         del self.positions[symbol]
         self.save()
-        return [{"symbol": symbol, "side": plan.side, "entry": plan.entry, "exit": exit_px,
-                 "stop_loss": plan.stop_loss, "take_profit": plan.take_profit, "contracts": plan.contracts,
-                 "reason": reason, "pnl": round(pnl, 2),
-                 "r_multiple": round(pnl / risk_money, 3) if risk_money else 0.0, "equity": round(self._equity, 2)}]
+        return {"symbol": symbol, "side": plan.side, "entry": plan.entry, "exit": exit_px,
+                "stop_loss": plan.stop_loss, "take_profit": plan.take_profit, "contracts": plan.contracts,
+                "reason": reason, "pnl": round(pnl, 2),
+                "r_multiple": round(pnl / risk_money, 3) if risk_money else 0.0, "equity": round(self._equity, 2)}

@@ -1,0 +1,191 @@
+"""Trader bewerten, Copy-Signale ableiten und ehrlich testen.
+
+Grundidee: Ein Trader ist nur dann interessant, wenn
+  1. er ueber viele Tage konstant Gewinn macht (nicht ein Gluckstreffer),
+  2. er nicht zu oft handelt (Market Maker / Hochfrequenz kann man nicht kopieren),
+  3. seine Trades auch NACH der Auswahl und MIT Verzoegerung beim Kopieren noch Gewinn bringen.
+Punkt 3 prueft der Walk-Forward-Test: Auswahl nur mit vergangenen Daten, Test nur mit spaeteren."""
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass, asdict
+
+import numpy as np
+import pandas as pd
+
+from tradingbot.config import Config
+from tradingbot.risk.manager import RiskManager
+from tradingbot.strategies.base import atr
+
+DAY_MS = 86_400_000
+
+
+# ---------- 1) Vorauswahl aus dem Leaderboard ----------
+
+def prefilter(rows: list[dict], min_account: float = 50_000, max_turnover: float = 150, top: int = 40) -> list[dict]:
+    """Kandidaten: grosses Konto, Gewinn im Monat UND insgesamt, kein Hochfrequenz-Handel.
+    turnover = Monatsvolumen / Kontowert (Market Maker liegen oft bei mehreren hundert)."""
+    out = []
+    for r in rows:
+        m, a = r["perf"].get("month", {}), r["perf"].get("allTime", {})
+        av = r["account_value"]
+        if av < min_account or m.get("pnl", 0) <= 0 or a.get("pnl", 0) <= 0:
+            continue
+        turnover = m.get("vlm", 0) / av if av else math.inf
+        if turnover > max_turnover:
+            continue
+        out.append({**r, "turnover": turnover})
+    out.sort(key=lambda r: r["perf"]["month"]["pnl"], reverse=True)
+    return out[:top]
+
+
+# ---------- 2) Bewertung anhand echter Fills ----------
+
+def daily_pnl(fills: list[dict], start_ms: int, end_ms: int) -> pd.Series:
+    """Realisierter Gewinn pro Tag (closedPnl minus Gebuehren)."""
+    days = pd.date_range(pd.to_datetime(start_ms, unit="ms", utc=True).normalize(),
+                         pd.to_datetime(end_ms, unit="ms", utc=True).normalize(), freq="D")
+    s = pd.Series(0.0, index=days)
+    for f in fills:
+        if start_ms <= f["time"] <= end_ms:
+            d = pd.to_datetime(f["time"], unit="ms", utc=True).normalize()
+            s[d] = s.get(d, 0.0) + float(f.get("closedPnl", 0)) - float(f.get("fee", 0))
+    return s
+
+
+@dataclass
+class TraderScore:
+    address: str
+    pnl: float
+    days: int
+    active_days: int
+    profitable_days: float     # Anteil Tage mit Gewinn (nur aktive Tage)
+    profitable_weeks: float
+    t_stat: float              # Mittelwert / Streuung * Wurzel(Tage): > 2 heisst "eher kein Zufall"
+    max_drawdown: float        # groesster Rueckgang des kumulierten Gewinns (in USD)
+    opens_per_day: float
+    score: float
+
+    def to_dict(self):
+        return asdict(self)
+
+
+def score_trader(address: str, fills: list[dict], start_ms: int, end_ms: int) -> TraderScore:
+    d = daily_pnl(fills, start_ms, end_ms)
+    active = d[d != 0]
+    weeks = d.resample("W").sum()
+    weeks = weeks[weeks != 0]
+    std = d.std()
+    t = (d.mean() / std * math.sqrt(len(d))) if std and std > 0 else 0.0
+    cum = d.cumsum()
+    dd = float((cum.cummax() - cum).max()) if len(cum) else 0.0
+    opens = len(open_signals(fills, start_ms, end_ms))
+    n_days = max(len(d), 1)
+    opd = opens / n_days
+    pw = float((weeks > 0).mean()) if len(weeks) else 0.0
+    # Score: statistische Sicherheit, belohnt konstante Wochen, bestraft zu viel Handel
+    score = t * (0.5 + pw) * (1.0 if opd <= 20 else 20 / opd)
+    return TraderScore(address, float(d.sum()), n_days, int(len(active)),
+                       float((active > 0).mean()) if len(active) else 0.0, pw, float(t), dd, opd, float(score))
+
+
+# ---------- 3) Copy-Signale ----------
+
+def _is_flat(x: float) -> bool:
+    return abs(x) < 1e-12
+
+
+def open_signals(fills: list[dict], start_ms: int = 0, end_ms: int | None = None) -> list[dict]:
+    """Neue Positionen (vorher flach -> Long/Short) und Positionswechsel.
+    Teilkaeufe in eine bestehende Position zaehlen NICHT als neues Signal."""
+    out = []
+    for f in fills:
+        if f["time"] < start_ms or (end_ms and f["time"] > end_ms):
+            continue
+        start = float(f.get("startPosition", 0))
+        signed = float(f["sz"]) * (1 if f["side"] == "B" else -1)
+        after = start + signed
+        if _is_flat(start) and not _is_flat(after) or (start * after < 0):
+            out.append({"time": f["time"], "coin": f["coin"], "side": 1 if after > 0 else -1, "px": float(f["px"])})
+    return out
+
+
+def close_times(fills: list[dict]) -> dict[str, list[tuple[int, int]]]:
+    """Wann ein Trader eine Position komplett schliesst oder dreht: {coin: [(zeit, seite_vorher)]}"""
+    out: dict[str, list] = {}
+    for f in fills:
+        start = float(f.get("startPosition", 0))
+        after = start + float(f["sz"]) * (1 if f["side"] == "B" else -1)
+        if not _is_flat(start) and (_is_flat(after) or start * after < 0):
+            out.setdefault(f["coin"], []).append((f["time"], 1 if start > 0 else -1))
+    return out
+
+
+# ---------- 4) Kopieren simulieren ----------
+
+@dataclass
+class CopyTrade:
+    trader: str
+    coin: str
+    side: int
+    signal_time: int
+    entry_time: str
+    entry: float
+    exit: float
+    reason: str
+    r_multiple: float
+    slippage_pct: float  # wie viel schlechter wir einsteigen als der Trader (in %)
+
+
+def simulate_copy(signals: list[dict], closes: dict, candles: dict[str, pd.DataFrame], cfg: Config,
+                  trader: str, delay_ms: int = 60_000, follow_exit: bool = True) -> list[CopyTrade]:
+    """Jedes Signal wird mit Verzoegerung zur Eroeffnung der naechsten Kerze kopiert.
+    SL/TP setzt unser Risk Manager (RR 1:3). follow_exit: zusaetzlich aussteigen, wenn der Trader schliesst."""
+    rm = RiskManager(cfg.risk)
+    out = []
+    for s in signals:
+        df = candles.get(s["coin"])
+        if df is None or df.empty:
+            continue
+        t_entry = pd.to_datetime(s["time"] + delay_ms, unit="ms", utc=True)
+        later = df.index[df.index >= t_entry]
+        if not len(later):
+            continue
+        i0 = df.index.get_loc(later[0])
+        if i0 < cfg.risk.atr_period + 1:
+            continue
+        a = atr(df.iloc[:i0], cfg.risk.atr_period).iloc[-1]
+        entry = float(df["open"].iloc[i0])
+        plan = rm.plan(s["side"], entry, float(a), 1e9, 1.0, 0, 1e-12)  # Groesse egal, wir rechnen in R
+        if plan is None:
+            continue
+        exit_ms = None
+        if follow_exit:
+            later_closes = [t for t, side in closes.get(s["coin"], []) if t > s["time"] and side == s["side"]]
+            exit_ms = later_closes[0] + delay_ms if later_closes else None
+        reason, exit_px = "end", float(df["close"].iloc[-1])
+        for i in range(i0, len(df)):
+            bar = df.iloc[i]
+            if exit_ms is not None and df.index[i].value // 1_000_000 >= exit_ms:
+                reason, exit_px = "trader_exit", float(bar["open"])
+                break
+            res = plan.check_exit(float(bar["high"]), float(bar["low"]))
+            if res:
+                reason, exit_px = res
+                break
+            plan.trail(float(bar["high"]), float(bar["low"]))
+        fees = cfg.fee_pct / 100 * (entry + exit_px)
+        r = ((exit_px - entry) * s["side"] - fees) / plan.initial_risk
+        out.append(CopyTrade(trader, s["coin"], s["side"], s["time"], str(df.index[i0]), entry, exit_px, reason,
+                             float(r), float((entry - s["px"]) / s["px"] * 100 * s["side"])))
+    return out
+
+
+def summarize_r(trades: list[CopyTrade]) -> dict:
+    if not trades:
+        return {"trades": 0, "win_rate": 0.0, "expectancy_r": 0.0, "profit_factor": 0.0, "avg_slippage_pct": 0.0}
+    r = np.array([t.r_multiple for t in trades])
+    gains, losses = r[r > 0].sum(), -r[r <= 0].sum()
+    return {"trades": len(r), "win_rate": float((r > 0).mean()), "expectancy_r": float(r.mean()),
+            "profit_factor": float(gains / losses) if losses > 0 else float("inf"),
+            "avg_slippage_pct": float(np.mean([t.slippage_pct for t in trades]))}

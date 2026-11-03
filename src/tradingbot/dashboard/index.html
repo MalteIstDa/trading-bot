@@ -143,7 +143,7 @@ function render(s) {
   const trades = s.trades || [];
   tb.innerHTML = trades.length ? trades.map(t => {
     const pnl = Number(t.pnl), r = t.r_multiple === undefined || t.r_multiple === '' ? null : Number(t.r_multiple);
-    const reason = { tp: 'Ziel (TP)', sl: 'Stop (SL)', trail: 'Trailing Stop' }[t.reason] || t.reason;
+    const reason = { tp: 'Ziel (TP)', sl: 'Stop (SL)', trail: 'Trailing Stop', trader_exit: 'Trader ausgestiegen' }[t.reason] || t.reason;
     return `<tr><td>${new Date(t.time).toLocaleString('de-DE')}</td><td>${t.symbol}</td>
       <td class="${t.side > 0 ? 'up' : 'down'}">${Number(t.side) > 0 ? 'LONG' : 'SHORT'}</td>
       <td>${num(t.entry)}</td><td>${num(t.exit)}</td><td>${reason}</td>
