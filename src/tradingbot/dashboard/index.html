@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trading Bot Live</title>
+<script src="/vendor/lightweight-charts.js"></script>
+<style>
+  :root {
+    --bg: #070b12; --panel: #0d1420; --line: #1b2636; --text: #d7e0ea; --muted: #6f8197;
+    --green: #22d39a; --red: #ff4d6d; --amber: #f5b942; --blue: #4da3ff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; padding: 16px 20px;
+           border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #0b1220, var(--bg)); }
+  .brand { font-weight: 700; letter-spacing: .08em; color: var(--muted); }
+  .brand b { color: var(--text); }
+  .badge { padding: 2px 8px; border: 1px solid var(--amber); color: var(--amber); border-radius: 4px; font-size: 11px; }
+  .equity { font-size: 34px; font-weight: 700; color: var(--green); text-shadow: 0 0 18px rgba(34,211,154,.35); }
+  .equity.neg { color: var(--red); text-shadow: 0 0 18px rgba(255,77,109,.35); }
+  .kpis { display: flex; gap: 22px; flex-wrap: wrap; }
+  .kpi > span { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  .kpi b { font-size: 16px; }
+  .status { margin-left: auto; color: var(--muted); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; }
+  .dot.live { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .dot.stale { background: var(--red); }
+  main { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px; padding: 12px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; min-width: 0; }
+  .panel h2 { margin: 0 0 6px; font-size: 12px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+  .panel h2 small { color: var(--muted); font-weight: 400; }
+  .chart { height: 260px; }
+  .pos { margin-top: 6px; color: var(--muted); min-height: 18px; }
+  .pos .long { color: var(--green); } .pos .short { color: var(--red); }
+  .wide { grid-column: 1 / -1; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; }
+  .up { color: var(--green); } .down { color: var(--red); }
+  .empty { color: var(--muted); padding: 20px; text-align: center; }
+  .tablewrap { overflow-x: auto; }
+  @media (max-width: 520px) { main { grid-template-columns: 1fr; padding: 8px; } header { padding: 12px 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><b>TRADING BOT</b> · LIVE <span class="badge">PAPER · SPIELGELD</span></div>
+  <div class="equity" id="equity">–</div>
+  <div class="kpis">
+    <div class="kpi"><span>Gewinn/Verlust</span><b id="pnl">–</b></div>
+    <div class="kpi"><span>Rendite</span><b id="ret">–</b></div>
+    <div class="kpi"><span>Trades</span><b id="ntr">–</b></div>
+    <div class="kpi"><span>Trefferquote</span><b id="wr">–</b></div>
+    <div class="kpi"><span>Ø pro Trade</span><b id="exp">–</b></div>
+    <div class="kpi"><span>Profit Factor</span><b id="pf">–</b></div>
+  </div>
+  <div class="status"><span class="dot" id="dot"></span><span id="status">verbinde…</span></div>
+</header>
+<main id="grid">
+  <section class="panel wide"><h2>Kontoverlauf <small id="setup"></small></h2><div class="chart" id="equity-chart" style="height:200px"></div></section>
+</main>
+<section class="panel" style="margin:0 12px 12px">
+  <h2>Letzte Trades <small>neueste zuerst</small></h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Zeit</th><th>Markt</th><th>Richtung</th><th>Einstieg</th><th>Ausstieg</th><th>Grund</th><th>R</th><th>Gewinn</th></tr></thead>
+    <tbody id="trades"><tr><td colspan="8" class="empty">Noch keine abgeschlossenen Trades</td></tr></tbody>
+  </table></div>
+</section>
+<footer style="padding:0 20px 16px;color:var(--muted);font-size:11px">Nur Paper Trading mit Spielgeld, keine Anlageberatung. Charts:
+  <a href="https://www.tradingview.com/" style="color:var(--muted)">TradingView Lightweight Charts</a></footer>
+<script>
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const C = { bg: css('--panel'), line: css('--line'), text: css('--muted'), green: css('--green'), red: css('--red'),
+            amber: css('--amber'), blue: css('--blue') };
+const base = { layout: { background: { color: C.bg }, textColor: C.text, fontFamily: 'ui-monospace, Menlo, monospace' },
+               grid: { vertLines: { color: C.line }, horzLines: { color: C.line } },
+               rightPriceScale: { borderColor: C.line }, timeScale: { borderColor: C.line, timeVisible: true },
+               autoSize: true };
+const eur = v => v == null ? '–' : v.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
+const pct = v => v == null ? '–' : (v * 100).toFixed(1).replace('.', ',') + ' %';
+const num = (v, d = 2) => v == null ? '–' : Number(v).toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
+const signCls = v => v > 0 ? 'up' : v < 0 ? 'down' : '';
+
+const eqChart = LightweightCharts.createChart(document.getElementById('equity-chart'), base);
+const eqSeries = eqChart.addAreaSeries({ lineColor: C.green, topColor: 'rgba(34,211,154,.35)', bottomColor: 'rgba(34,211,154,0)', lineWidth: 2 });
+const markets = {};
+
+function marketPanel(sym, m) {
+  const el = document.createElement('section');
+  el.className = 'panel';
+  el.innerHTML = `<h2><span>${m.name} <small>${sym}</small></span><small class="strat"></small></h2>
+                  <div class="chart"></div><div class="pos"></div>`;
+  document.getElementById('grid').appendChild(el);
+  const chart = LightweightCharts.createChart(el.querySelector('.chart'), base);
+  const series = chart.addCandlestickSeries({ upColor: C.green, downColor: C.red, borderVisible: false,
+                                              wickUpColor: C.green, wickDownColor: C.red });
+  return markets[sym] = { el, chart, series, lines: [], fitted: false };
+}
+
+function render(s) {
+  const start = s.start_capital || 0, eq = s.equity;
+  const eqEl = document.getElementById('equity');
+  eqEl.textContent = eur(eq);
+  eqEl.classList.toggle('neg', eq < start);
+  const pnl = eq != null ? eq - start : null;
+  document.getElementById('pnl').innerHTML = `<span class="${signCls(pnl)}">${eur(pnl)}</span>`;
+  document.getElementById('ret').innerHTML = `<span class="${signCls(pnl)}">${start ? pct(pnl / start) : '–'}</span>`;
+  const st = s.stats || {};
+  document.getElementById('ntr').textContent = st.trades ?? '–';
+  document.getElementById('wr').textContent = pct(st.win_rate);
+  document.getElementById('exp').innerHTML = st.expectancy_r == null ? '–' :
+    `<span class="${signCls(st.expectancy_r)}">${num(st.expectancy_r)} R</span>`;
+  document.getElementById('pf').textContent = num(st.profit_factor);
+  document.getElementById('setup').textContent = s.timeframe ? `${s.timeframe}-Kerzen · Ausstieg: ${s.exit_mode}` : '';
+
+  const pts = (s.equity_curve || []).map(p => ({ time: Math.floor(Date.parse(p.time) / 1000), value: p.equity }));
+  const dedup = []; for (const p of pts) { if (dedup.length && dedup[dedup.length - 1].time >= p.time) continue; dedup.push(p); }
+  const neg = eq != null && eq < start;
+  eqSeries.applyOptions({ lineColor: neg ? C.red : C.green,
+    topColor: neg ? 'rgba(255,77,109,.30)' : 'rgba(34,211,154,.35)', bottomColor: 'rgba(0,0,0,0)' });
+  eqSeries.setData(dedup);
+
+  for (const [sym, m] of Object.entries(s.markets || {})) {
+    const mk = markets[sym] || marketPanel(sym, m);
+    mk.el.querySelector('.strat').textContent = m.strategy;
+    mk.series.setData(m.candles.map(c => ({ time: c[0], open: c[1], high: c[2], low: c[3], close: c[4] })));
+    if (!mk.fitted && m.candles.length) { mk.chart.timeScale().fitContent(); mk.fitted = true; }
+    mk.lines.forEach(l => mk.series.removePriceLine(l)); mk.lines = [];
+    const p = m.position, posEl = mk.el.querySelector('.pos');
+    if (p) {
+      const add = (price, color, title) => price != null &&
+        mk.lines.push(mk.series.createPriceLine({ price, color, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title }));
+      add(p.entry, C.blue, 'Einstieg'); add(p.stop_loss, C.red, 'SL'); add(p.take_profit, C.green, 'TP');
+      posEl.innerHTML = `<span class="${p.side > 0 ? 'long' : 'short'}">${p.side > 0 ? 'LONG' : 'SHORT'}</span> ` +
+        `${p.contracts}× @ ${num(p.entry)} · SL ${num(p.stop_loss)} · TP ${p.take_profit == null ? 'Trailing' : num(p.take_profit)}`;
+    } else posEl.textContent = 'Keine offene Position';
+  }
+
+  const tb = document.getElementById('trades');
+  const trades = s.trades || [];
+  tb.innerHTML = trades.length ? trades.map(t => {
+    const pnl = Number(t.pnl), r = t.r_multiple === undefined || t.r_multiple === '' ? null : Number(t.r_multiple);
+    const reason = { tp: 'Ziel (TP)', sl: 'Stop (SL)', trail: 'Trailing Stop' }[t.reason] || t.reason;
+    return `<tr><td>${new Date(t.time).toLocaleString('de-DE')}</td><td>${t.symbol}</td>
+      <td class="${t.side > 0 ? 'up' : 'down'}">${Number(t.side) > 0 ? 'LONG' : 'SHORT'}</td>
+      <td>${num(t.entry)}</td><td>${num(t.exit)}</td><td>${reason}</td>
+      <td class="${signCls(r)}">${r == null ? '–' : num(r)}</td><td class="${signCls(pnl)}">${eur(pnl)}</td></tr>`;
+  }).join('') : '<tr><td colspan="8" class="empty">Noch keine abgeschlossenen Trades</td></tr>';
+
+  const age = s.updated ? (Date.now() - Date.parse(s.updated)) / 1000 : Infinity;
+  const live = age < 180;
+  document.getElementById('dot').className = 'dot ' + (live ? 'live' : 'stale');
+  document.getElementById('status').textContent = !s.updated ? 'Bot läuft nicht (starte ./paper-test.sh)'
+    : live ? `live · aktualisiert vor ${Math.round(age)} s` : `Bot antwortet nicht seit ${Math.round(age / 60)} min`;
+}
+
+async function tick() {
+  try { render(await (await fetch('/api/state')).json()); }
+  catch (e) { document.getElementById('status').textContent = 'Dashboard-Server nicht erreichbar'; document.getElementById('dot').className = 'dot stale'; }
+}
+tick(); setInterval(tick, 5000);
+</script>
+</body>
+</html>

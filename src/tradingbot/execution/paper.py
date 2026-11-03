@@ -51,10 +51,13 @@ class PaperBroker(Broker):
             self.save()
             return []
         reason, exit_px = res
-        pnl = (exit_px - plan.entry) * plan.side * plan.contracts * self.point_values.get(symbol, 1.0) - 2 * self.fee
+        pv = self.point_values.get(symbol, 1.0)
+        pnl = (exit_px - plan.entry) * plan.side * plan.contracts * pv - 2 * self.fee
+        risk_money = plan.initial_risk * plan.contracts * pv
         self._equity += pnl
         del self.positions[symbol]
         self.save()
         return [{"symbol": symbol, "side": plan.side, "entry": plan.entry, "exit": exit_px,
                  "stop_loss": plan.stop_loss, "take_profit": plan.take_profit, "contracts": plan.contracts,
-                 "reason": reason, "pnl": round(pnl, 2), "equity": round(self._equity, 2)}]
+                 "reason": reason, "pnl": round(pnl, 2),
+                 "r_multiple": round(pnl / risk_money, 3) if risk_money else 0.0, "equity": round(self._equity, 2)}]

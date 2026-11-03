@@ -42,6 +42,18 @@ tradingbot select --timeframe 1d --exit trailing   # Trendfolge: Tageskerzen, na
 
 `tradingbot paper` nutzt automatisch dieselbe Kerzengroesse wie das letzte `select`.
 
+### Live-Dashboard
+
+In einem zweiten Terminalfenster (der Paper-Bot muss laufen):
+
+```bash
+tradingbot dashboard
+```
+
+Oeffnet `http://localhost:8050` im Browser: Kontostand, Kontoverlauf, Charts aller Maerkte mit Einstieg/SL/TP
+der offenen Positionen, Trefferquote, Gewinn pro Trade (R) und alle Trades. Aktualisiert sich alle 5 Sekunden.
+Laeuft nur lokal auf deinem Rechner.
+
 ### Paper-Testlauf (Technik pruefen, ohne bestandene Strategie)
 
 ```bash
@@ -80,6 +92,7 @@ src/tradingbot/
   learning/              Journal, Verlust-Filter, Walk-Forward-Auswahl
   execution/             Broker-Schnittstelle + Paper Broker
   bot.py                 Paper-Trading-Schleife
+  dashboard/             Live-Dashboard (lokaler Webserver + Seite)
   cli.py                 Kommandozeile
 config/config.example.yaml
 tests/

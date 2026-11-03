@@ -20,6 +20,8 @@ DATA = ROOT / "data"
 SELECTION_FILE = DATA / "selection.json"
 STATE_FILE = DATA / "paper_state.json"
 TRADES_CSV = DATA / "paper_trades.csv"
+EQUITY_CSV = DATA / "paper_equity.csv"
+DASHBOARD_JSON = DATA / "dashboard.json"
 
 
 def load_selection() -> dict:
@@ -30,12 +32,50 @@ def load_selection() -> dict:
 
 
 def _log_trade(row: dict) -> None:
+    fields = ["time", *row.keys()]
+    if TRADES_CSV.exists():
+        with TRADES_CSV.open() as f:
+            header = f.readline().strip().split(",")
+        if header != fields:  # altes Format: beiseitelegen statt Spalten zu vermischen
+            TRADES_CSV.rename(TRADES_CSV.with_name("paper_trades_alt.csv"))
     new = not TRADES_CSV.exists()
     with TRADES_CSV.open("a", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["time", *row.keys()])
+        w = csv.DictWriter(f, fieldnames=fields)
         if new:
             w.writeheader()
         w.writerow({"time": datetime.now(timezone.utc).isoformat(timespec="seconds"), **row})
+
+
+def _num(x: float):
+    return None if x is None or x != x or abs(x) == float("inf") else round(float(x), 4)
+
+
+def write_dashboard(cfg: Config, broker, strategies: dict[str, str], frames: dict) -> None:
+    """Schreibt den aktuellen Stand fuer `tradingbot dashboard` (data/dashboard.json + Kontoverlauf)."""
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    markets = {}
+    for symbol, strat_name in strategies.items():
+        df = frames.get(symbol)
+        pos = broker.open_positions().get(symbol)
+        candles = []
+        if df is not None:
+            tail = df.tail(200)
+            candles = [[int(ts.timestamp()), _num(r.open), _num(r.high), _num(r.low), _num(r.close)]
+                       for ts, r in zip(tail.index, tail.itertuples())]
+        markets[symbol] = {
+            "name": cfg.market(symbol)["name"], "strategy": strat_name, "candles": candles,
+            "position": None if pos is None else {
+                "side": pos.side, "entry": _num(pos.entry), "stop_loss": _num(pos.stop_loss),
+                "take_profit": _num(pos.take_profit), "contracts": pos.contracts},
+        }
+    DASHBOARD_JSON.write_text(json.dumps({
+        "updated": now, "mode": "paper", "timeframe": cfg.timeframe, "exit_mode": cfg.risk.exit_mode,
+        "start_capital": cfg.start_capital, "equity": round(broker.equity(), 2), "markets": markets}))
+    new = not EQUITY_CSV.exists()
+    with EQUITY_CSV.open("a", newline="") as f:
+        if new:
+            f.write("time,equity\n")
+        f.write(f"{now},{broker.equity():.2f}\n")
 
 
 def run_paper(cfg: Config, poll_seconds: int = 60, strategies: dict[str, str] | None = None) -> None:
@@ -63,6 +103,7 @@ def run_paper(cfg: Config, poll_seconds: int = 60, strategies: dict[str, str] | 
     log.info("Paper Trading (%s-Kerzen, Ausstieg %s) mit %s | Konto: %.2f", cfg.timeframe, cfg.risk.exit_mode,
              strategies, broker.equity())
 
+    frames: dict = {}
     while True:
         for symbol, strat_name in strategies.items():
             strat = by_name[strat_name]
@@ -71,6 +112,7 @@ def run_paper(cfg: Config, poll_seconds: int = 60, strategies: dict[str, str] | 
             except Exception as e:  # Netzwerkfehler duerfen den Bot nicht beenden
                 log.warning("%s: Daten-Fehler %s", symbol, e)
                 continue
+            frames[symbol] = df
             closed_bars = df.iloc[:-1]  # letzte Kerze ist noch nicht fertig
             if symbol not in last_bar:  # Start: nur ab jetzt handeln, nicht die Vergangenheit
                 last_bar[symbol] = closed_bars.index[-1]
@@ -98,4 +140,8 @@ def run_paper(cfg: Config, poll_seconds: int = 60, strategies: dict[str, str] | 
                                  plan.take_profit, plan.contracts)
             last_bar[symbol] = closed_bars.index[-1]
         log.info("Konto: %.2f | offen: %s", broker.equity(), list(broker.open_positions()) or "-")
+        try:
+            write_dashboard(cfg, broker, strategies, frames)
+        except Exception as e:  # Dashboard darf den Bot nie stoppen
+            log.warning("Dashboard-Daten konnten nicht geschrieben werden: %s", e)
         time.sleep(poll_seconds)

@@ -76,6 +76,11 @@ def cmd_paper(args, cfg):
     run_paper(cfg, args.poll, strategies)
 
 
+def cmd_dashboard(args, cfg):
+    from tradingbot.dashboard.server import serve
+    serve(args.port, not args.no_browser)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="tradingbot")
     p.add_argument("--config", help="Pfad zur config.yaml")
@@ -92,6 +97,9 @@ def main(argv=None):
     sp.add_argument("--symbols", nargs="+", help="Maerkte fuer den Testlauf, z. B. GC=F NQ=F")
     sp.add_argument("--timeframe", help="Kerzengroesse, z. B. 5m oder 1h")
     sp.add_argument("--exit", choices=["fixed", "trailing"], help="fixed = SL+TP 1:3, trailing = nachgezogener Stop")
+    sp = sub.add_parser("dashboard", help="Live-Dashboard im Browser")
+    sp.add_argument("--port", type=int, default=8050)
+    sp.add_argument("--no-browser", action="store_true")
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = load_config(args.config)
@@ -102,9 +110,10 @@ def main(argv=None):
         cfg.selection.min_trades = args.min_trades
     if getattr(args, "exit", None):
         cfg.risk.exit_mode = args.exit
-    if args.cmd != "paper":
+    if args.cmd in ("backtest", "select"):
         print(f"Kerzen: {cfg.timeframe}, Historie: {cfg.history_period}, Ausstieg: {cfg.risk.exit_mode}")
-    {"backtest": cmd_backtest, "select": cmd_select, "paper": cmd_paper}[args.cmd](args, cfg)
+    {"backtest": cmd_backtest, "select": cmd_select, "paper": cmd_paper,
+     "dashboard": cmd_dashboard}[args.cmd](args, cfg)
 
 
 if __name__ == "__main__":

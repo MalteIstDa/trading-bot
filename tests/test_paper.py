@@ -16,6 +16,8 @@ def test_paper_loop_trades_and_persists(tmp_path, monkeypatch):
     state = {"n": 400}
     monkeypatch.setattr(bot, "STATE_FILE", tmp_path / "state.json")
     monkeypatch.setattr(bot, "TRADES_CSV", tmp_path / "trades.csv")
+    monkeypatch.setattr(bot, "EQUITY_CSV", tmp_path / "equity.csv")
+    monkeypatch.setattr(bot, "DASHBOARD_JSON", tmp_path / "dashboard.json")
     monkeypatch.setattr(bot, "load_history", lambda *a, **k: full.iloc[: state["n"]])
 
     def fake_sleep(_):
@@ -29,6 +31,9 @@ def test_paper_loop_trades_and_persists(tmp_path, monkeypatch):
         bot.run_paper(cfg, 0, {"GC=F": "breakout(lookback=20)"})
     assert (tmp_path / "state.json").exists()
     assert (tmp_path / "trades.csv").exists()
+    import json
+    dash = json.loads((tmp_path / "dashboard.json").read_text())
+    assert dash["markets"]["GC=F"]["candles"] and dash["equity"] > 0
 
 
 def test_paper_state_survives_restart(tmp_path):
