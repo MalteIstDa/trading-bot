@@ -17,7 +17,7 @@ Aktueller Stand: **Backtest und Paper Trading mit Spielgeld**. Echtes Geld ist a
 
 ```bash
 git clone <repo-url> && cd trading-bot
-python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python3 -m venv .venv && source .venv/bin/activate   # Windows: python -m venv .venv; .venv\Scripts\activate
 pip install -e . pytest
 cp config/config.example.yaml config/config.yaml
 pytest                      # alles gruen?
