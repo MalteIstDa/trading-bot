@@ -39,7 +39,8 @@ tradingbot select --timeframe 15m # 15-Minuten-Kerzen, 60 Tage
 ### Paper-Testlauf (Technik pruefen, ohne bestandene Strategie)
 
 ```bash
-caffeinate -i tradingbot paper --strategy "trend_breakout(lookback=20, adx_min=25)" --symbols GC=F NQ=F --timeframe 5m
+./paper-test.sh        # Kurzform fuer:
+# caffeinate -i tradingbot paper --strategy "trend_breakout(lookback=20, adx_min=25)" --symbols GC=F NQ=F --timeframe 5m
 ```
 
 - `caffeinate -i` (nur Mac) verhindert den Ruhezustand, solange der Bot laeuft. Ladekabel dranlassen.
