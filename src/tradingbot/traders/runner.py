@@ -137,6 +137,15 @@ def test(cfg: Config, train_days: int = 30, test_days: int = 10, windows: int = 
             w_own += score_trader(s.address, fills[s.address], te_start, te_end).pnl
         all_trades += w_trades
         own_pnl.append(w_own)
+        by_trader: dict[str, list] = {}
+        for t in w_trades:
+            by_trader.setdefault(t.trader, []).append(t)
+        for addr, ts in sorted(by_trader.items(), key=lambda kv: -len(kv[1])):
+            reasons = pd.Series([t.reason for t in ts]).value_counts().to_dict()
+            coins = pd.Series([t.coin for t in ts]).value_counts().head(3).to_dict()
+            st = summarize_r(ts)
+            print(f"    Fenster {w + 1} {_short(addr)}: {st['trades']} Trades, Exp {st['expectancy_r']:+.2f}R, "
+                  f"Ausstiege {reasons}, Coins {coins}")
         label = pd.to_datetime(te_start, unit="ms").strftime("%Y-%m-%d")
         rows.append((label, len(chosen), w_own, summarize_r(w_trades)))
 
@@ -153,6 +162,7 @@ def test(cfg: Config, train_days: int = 30, test_days: int = 10, windows: int = 
     verdict = total["trades"] >= 30 and total["expectancy_r"] > 0 and positive_windows > windows / 2
     print("  -> BESTANDEN: lohnt sich fuer Paper Trading" if verdict else
           "  -> NICHT BESTANDEN: Kopieren bringt hier nach Gebuehren und Verzoegerung keinen Vorteil")
+    pd.DataFrame([t.__dict__ for t in all_trades]).to_csv(_dir() / "copy_trades.csv", index=False)
     (_dir() / "test_result.json").write_text(json.dumps({"total": total, "windows": [
         {"from": l, "traders": n, "own_pnl": o, "copy": s} for l, n, o, s in rows], "passed": verdict}, indent=2))
     return {"total": total, "passed": verdict}
