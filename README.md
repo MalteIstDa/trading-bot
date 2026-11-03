@@ -42,6 +42,19 @@ tradingbot select --timeframe 1d --exit trailing   # Trendfolge: Tageskerzen, na
 
 `tradingbot paper` nutzt automatisch dieselbe Kerzengroesse wie das letzte `select`.
 
+### Krypto (Bitcoin, Ethereum, Solana)
+
+```bash
+tradingbot backtest --config config/crypto.yaml
+tradingbot select --config config/crypto.yaml --timeframe 1h
+./paper-crypto.sh             # Paper-Testlauf mit 20 USD Spielgeld
+./dashboard-crypto.sh         # Dashboard dazu auf http://localhost:8051
+```
+
+Krypto laeuft rund um die Uhr, man kann Bruchteile kaufen (z. B. 0.0008 BTC), und die Gebuehren sind prozentual
+(0,1 % pro Seite in `config/crypto.yaml`). Der Krypto-Testlauf speichert seinen Stand getrennt in `data/crypto/`,
+kann also gleichzeitig mit dem Futures-Testlauf laufen.
+
 ### Live-Dashboard
 
 In einem zweiten Terminalfenster (der Paper-Bot muss laufen):

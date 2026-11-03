@@ -14,7 +14,7 @@ class OrderPlan:
     entry: float
     stop_loss: float
     take_profit: float  # inf/-inf = kein festes Ziel (Trailing-Modus)
-    contracts: int
+    contracts: float   # Kontrakte (Futures) oder Coins (Krypto, auch Bruchteile)
     initial_risk: float = 0.0  # Abstand Einstieg -> erster Stop (fuer R-Berechnung)
     trail_dist: float = 0.0    # > 0: Stop wird mit dem Kurs nachgezogen
 
@@ -59,7 +59,7 @@ class RiskManager:
             self.halted = True  # Kill Switch fuer den Rest des Tages
 
     def plan(self, side: int, entry: float, atr_value: float, equity: float,
-             point_value: float, open_positions: int) -> OrderPlan | None:
+             point_value: float, open_positions: int, lot_step: float = 1.0) -> OrderPlan | None:
         """Erzeugt einen Order-Plan oder None, wenn der Trade gegen eine Regel verstoesst."""
         if self.halted or side == 0 or open_positions >= self.cfg.max_open_positions:
             return None
@@ -68,8 +68,10 @@ class RiskManager:
         trailing = self.cfg.exit_mode == "trailing"
         sl_dist = atr_value * (self.cfg.trail_atr_mult if trailing else self.cfg.sl_atr_mult)
         risk_money = equity * self.cfg.risk_per_trade_pct / 100
-        contracts = int(risk_money // (sl_dist * point_value))
-        if contracts < 1:
+        # auf die kleinste handelbare Menge abrunden (Futures: 1 Kontrakt, Krypto z. B. 0.0001 BTC)
+        contracts = math.floor(risk_money / (sl_dist * point_value) / lot_step + 1e-9) * lot_step
+        contracts = round(contracts, 10)
+        if contracts < lot_step:
             return None  # Konto zu klein fuer dieses Risiko: lieber kein Trade
         tp = side * math.inf if trailing else entry + side * sl_dist * self.cfg.reward_risk
         return OrderPlan(side, entry, entry - side * sl_dist, tp, contracts,

@@ -12,10 +12,11 @@ from tradingbot.risk.manager import OrderPlan
 
 class PaperBroker(Broker):
     def __init__(self, start_capital: float, point_values: dict[str, float], fee: float = 1.0,
-                 state_file: Path | None = None):
+                 state_file: Path | None = None, fee_pct: float = 0.0):
         self._equity = start_capital
         self.point_values = point_values
         self.fee = fee
+        self.fee_pct = fee_pct
         self.positions: dict[str, OrderPlan] = {}
         self.state_file = state_file
         if state_file and state_file.exists():
@@ -52,7 +53,8 @@ class PaperBroker(Broker):
             return []
         reason, exit_px = res
         pv = self.point_values.get(symbol, 1.0)
-        pnl = (exit_px - plan.entry) * plan.side * plan.contracts * pv - 2 * self.fee
+        fees = 2 * self.fee + self.fee_pct / 100 * (plan.entry + exit_px) * plan.contracts * pv
+        pnl = (exit_px - plan.entry) * plan.side * plan.contracts * pv - fees
         risk_money = plan.initial_risk * plan.contracts * pv
         self._equity += pnl
         del self.positions[symbol]

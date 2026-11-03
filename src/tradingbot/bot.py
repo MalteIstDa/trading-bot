@@ -5,7 +5,9 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import os
 import time
+from pathlib import Path
 from datetime import datetime, timezone
 
 from tradingbot.config import ROOT, Config
@@ -16,7 +18,11 @@ from tradingbot.strategies import all_candidates
 from tradingbot.strategies.base import atr
 
 log = logging.getLogger("tradingbot")
-DATA = ROOT / "data"
+# Eigener Ordner pro Testlauf moeglich (z. B. Krypto und Futures gleichzeitig): TRADINGBOT_DATA=data/crypto
+DATA = Path(os.environ.get("TRADINGBOT_DATA", ROOT / "data"))
+if not DATA.is_absolute():
+    DATA = ROOT / DATA
+DATA.mkdir(parents=True, exist_ok=True)
 SELECTION_FILE = DATA / "selection.json"
 STATE_FILE = DATA / "paper_state.json"
 TRADES_CSV = DATA / "paper_trades.csv"
@@ -96,7 +102,7 @@ def run_paper(cfg: Config, poll_seconds: int = 60, strategies: dict[str, str] | 
         raise SystemExit(f"Unbekannte Strategie(n): {unknown}. Verfuegbar: {sorted(by_name)}")
 
     broker = PaperBroker(cfg.start_capital, {m["symbol"]: m["point_value"] for m in cfg.markets},
-                         cfg.fee_per_trade, state_file=STATE_FILE)
+                         cfg.fee_per_trade, state_file=STATE_FILE, fee_pct=cfg.fee_pct)
     rm = RiskManager(cfg.risk)
     last_bar: dict[str, object] = {}
     period = "5d" if cfg.timeframe in ("1m", "2m", "5m") else "60d"
@@ -132,10 +138,11 @@ def run_paper(cfg: Config, poll_seconds: int = 60, strategies: dict[str, str] | 
                 if sig and symbol not in broker.open_positions():
                     entry = float(df["open"].iloc[i + 1])  # Einstieg zur Eroeffnung der naechsten Kerze
                     plan = rm.plan(sig, entry, float(atr_all.iloc[i]), broker.equity(),
-                                   cfg.market(symbol)["point_value"], len(broker.open_positions()))
+                                   cfg.market(symbol)["point_value"], len(broker.open_positions()),
+                                   cfg.market(symbol).get("lot_step", 1.0))
                     if plan:
                         broker.place_bracket(symbol, plan)
-                        log.info("Neuer Trade %s %s @ %.2f | SL %.2f | TP %.2f | %d Kontrakt(e)", symbol,
+                        log.info("Neuer Trade %s %s @ %.2f | SL %.2f | TP %.2f | Menge %g", symbol,
                                  "LONG" if plan.side > 0 else "SHORT", plan.entry, plan.stop_loss,
                                  plan.take_profit, plan.contracts)
             last_bar[symbol] = closed_bars.index[-1]

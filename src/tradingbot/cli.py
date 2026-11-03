@@ -21,7 +21,7 @@ def _data(args, cfg, symbol):
 
 def _fmt(stats: dict) -> str:
     return (f"Trades {stats['trades']:4d} | WR {stats['win_rate']:.0%} | PF {stats['profit_factor']:.2f} | "
-            f"Exp {stats['expectancy_r']:+.2f}R | PnL {stats['net_pnl']:+.0f} | MaxDD {stats['max_drawdown_pct']:.1f}%")
+            f"Exp {stats['expectancy_r']:+.2f}R | PnL {stats['net_pnl']:+.2f} | MaxDD {stats['max_drawdown_pct']:.1f}%")
 
 
 def cmd_backtest(args, cfg):
@@ -82,16 +82,18 @@ def cmd_dashboard(args, cfg):
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(prog="tradingbot")
-    p.add_argument("--config", help="Pfad zur config.yaml")
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--config", default=argparse.SUPPRESS,
+                        help="Pfad zur Konfiguration, z. B. config/crypto.yaml")
+    p = argparse.ArgumentParser(prog="tradingbot", parents=[common])
     sub = p.add_subparsers(dest="cmd", required=True)
     for name in ("backtest", "select"):
-        sp = sub.add_parser(name)
+        sp = sub.add_parser(name, parents=[common])
         sp.add_argument("--synthetic", action="store_true", help="Zufallsdaten statt echter Kurse")
         sp.add_argument("--timeframe", help="Kerzengroesse, z. B. 5m, 15m, 1h (1h = 2 Jahre Historie)")
         sp.add_argument("--exit", choices=["fixed", "trailing"], help="fixed = SL+TP 1:3, trailing = nachgezogener Stop")
         sp.add_argument("--min-trades", type=int, help="Mindestanzahl Trades pro Fenster/Out-of-Sample (Standard 30)")
-    sp = sub.add_parser("paper")
+    sp = sub.add_parser("paper", parents=[common])
     sp.add_argument("--poll", type=int, default=60, help="Sekunden zwischen Abfragen")
     sp.add_argument("--strategy", help='Testlauf mit fester Strategie, z. B. "breakout(lookback=20)"')
     sp.add_argument("--symbols", nargs="+", help="Maerkte fuer den Testlauf, z. B. GC=F NQ=F")
@@ -102,7 +104,7 @@ def main(argv=None):
     sp.add_argument("--no-browser", action="store_true")
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    cfg = load_config(args.config)
+    cfg = load_config(getattr(args, "config", None))
     if getattr(args, "timeframe", None):
         cfg.timeframe = args.timeframe
         cfg.history_period = max_period(args.timeframe)

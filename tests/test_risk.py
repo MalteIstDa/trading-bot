@@ -49,3 +49,16 @@ def test_trailing_short():
     plan.trail(high=95, low=90)
     assert plan.stop_loss == 92
     assert plan.check_exit(high=93, low=91) == ("trail", 92)
+
+
+def test_crypto_fractional_size():
+    rm = RiskManager(RiskConfig(risk_per_trade_pct=2, sl_atr_mult=1.0))
+    plan = rm.plan(1, 70_000, 500, equity=20, point_value=1, open_positions=0, lot_step=0.00001)
+    assert plan is not None
+    assert abs(plan.contracts - 0.0008) < 1e-12  # 0,40 Risiko / 500 Abstand = 0.0008 BTC
+
+
+def test_percentage_fee():
+    from tradingbot.config import Config
+    cfg = Config(fee_per_trade=0, fee_pct=0.1)
+    assert abs(cfg.fee(70_000, 0.001, 1) - 0.07) < 1e-12

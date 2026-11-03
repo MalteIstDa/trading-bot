@@ -22,7 +22,7 @@ class Trade:
     exit: float
     stop_loss: float
     take_profit: float
-    contracts: int
+    contracts: float
     pnl: float
     r_multiple: float     # Ergebnis in Vielfachen des Risikos (Verlust = -1R, Ziel = +3R)
     reason: str           # "tp", "sl", "trail" oder "end"
@@ -40,6 +40,7 @@ TradeFilter = Callable[[pd.Timestamp, float], bool]
 def run_backtest(df: pd.DataFrame, strategy: Strategy, cfg: Config, symbol: str = "TEST",
                  trade_filter: TradeFilter | None = None, tick: float = 0.0) -> tuple[list[Trade], pd.Series]:
     point_value = cfg.market(symbol)["point_value"]
+    lot_step = cfg.market(symbol).get("lot_step", 1.0)
     rm = RiskManager(cfg.risk)
     sig = strategy.signals(df).fillna(0).astype(int).to_numpy()
     a = atr(df, cfg.risk.atr_period).to_numpy()
@@ -59,7 +60,7 @@ def run_backtest(df: pd.DataFrame, strategy: Strategy, cfg: Config, symbol: str 
             atr_pct = a[i - 1] / c[i - 1] * 100 if c[i - 1] else 0.0
             if trade_filter is None or trade_filter(idx[i], atr_pct):
                 entry = o[i] + sig[i - 1] * slip
-                plan = rm.plan(sig[i - 1], entry, a[i - 1], equity, point_value, 0)
+                plan = rm.plan(sig[i - 1], entry, a[i - 1], equity, point_value, 0, lot_step)
                 if plan:
                     pos = (plan, i, atr_pct)
         # 2) SL/TP pruefen (trifft beides in einer Bar: konservativ SL annehmen)
@@ -70,7 +71,8 @@ def run_backtest(df: pd.DataFrame, strategy: Strategy, cfg: Config, symbol: str 
             if res or last:
                 reason, exit_px = res if res else ("end", c[i])
                 exit_px -= plan.side * slip
-                pnl = (exit_px - plan.entry) * plan.side * plan.contracts * point_value - 2 * cfg.fee_per_trade
+                pnl = ((exit_px - plan.entry) * plan.side * plan.contracts * point_value
+                       - cfg.fee(plan.entry, plan.contracts, point_value) - cfg.fee(exit_px, plan.contracts, point_value))
                 risk_money = plan.initial_risk * plan.contracts * point_value
                 equity += pnl
                 trades.append(Trade(symbol, repr(strategy), plan.side, idx[ei], idx[i], plan.entry, exit_px,

@@ -38,15 +38,20 @@ class Config:
     history_period: str = "60d"
     start_capital: float = 10_000.0
     fee_per_trade: float = 1.0
+    fee_pct: float = 0.0          # Gebuehr in % vom Handelsvolumen pro Seite (Krypto-Boersen)
     slippage_ticks: int = 1
     risk: RiskConfig = field(default_factory=RiskConfig)
     selection: SelectionConfig = field(default_factory=SelectionConfig)
+
+    def fee(self, price: float, qty: float, point_value: float) -> float:
+        """Gebuehr fuer EINE Seite (Kauf oder Verkauf)."""
+        return self.fee_per_trade + self.fee_pct / 100 * abs(price * qty * point_value)
 
     def market(self, symbol: str) -> dict:
         for m in self.markets:
             if m["symbol"] == symbol:
                 return m
-        return {"symbol": symbol, "name": symbol, "point_value": 1.0}
+        return {"symbol": symbol, "name": symbol, "point_value": 1.0, "lot_step": 1.0}
 
 
 def load_config(path: str | Path | None = None) -> Config:
@@ -63,6 +68,7 @@ def load_config(path: str | Path | None = None) -> Config:
         history_period=raw.get("history_period", "60d"),
         start_capital=acc.get("start_capital", 10_000.0),
         fee_per_trade=acc.get("fee_per_trade", 1.0),
+        fee_pct=acc.get("fee_pct", 0.0),
         slippage_ticks=acc.get("slippage_ticks", 1),
         risk=RiskConfig(**raw.get("risk", {})),
         selection=SelectionConfig(**raw.get("selection", {})),
