@@ -51,9 +51,16 @@ def cmd_select(args, cfg):
         print(f"  Out-of-Sample: {_fmt(res['out_of_sample'])}")
         print(f"  Strategiewechsel: {res['switches']} von {len(res['windows'])} Fenstern")
         journal.save(res["trades"], source="walk_forward")
-        chosen = [w for w in res["windows"] if w["strategy"]]
-        if chosen and res["out_of_sample"]["expectancy_r"] > 0:
-            selection[m["symbol"]] = chosen[-1]["strategy"]
+        oos, latest = res["out_of_sample"], res["windows"][-1] if res["windows"] else {}
+        if oos["trades"] < cfg.selection.min_trades:
+            print(f"  -> nicht ausgewaehlt: nur {oos['trades']} Out-of-Sample-Trades "
+                  f"(mind. {cfg.selection.min_trades} noetig, sonst ist es Zufall)")
+        elif oos["expectancy_r"] <= 0:
+            print("  -> nicht ausgewaehlt: Out-of-Sample nicht im Plus")
+        elif not latest.get("strategy"):
+            print("  -> nicht ausgewaehlt: im aktuellsten Fenster besteht keine Strategie")
+        else:
+            selection[m["symbol"]] = latest["strategy"]
     from tradingbot.bot import SELECTION_FILE
     SELECTION_FILE.write_text(json.dumps({"timeframe": cfg.timeframe, "strategies": selection}, indent=2))
     print(f"\nAusgewaehlt fuer Paper Trading: {selection or 'nichts (kein Markt hat out-of-sample bestanden)'}")
