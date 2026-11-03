@@ -8,13 +8,19 @@ import logging
 from tradingbot.backtest.engine import run_backtest
 from tradingbot.backtest.metrics import breakeven_win_rate, summarize
 from tradingbot.config import load_config
-from tradingbot.data.feed import load_history, synthetic
+from tradingbot.data.feed import load_history, max_period, synthetic
 from tradingbot.learning import journal
 from tradingbot.learning.selector import walk_forward
 
 
 def _data(args, cfg, symbol):
     return synthetic() if args.synthetic else load_history(symbol, cfg.timeframe, cfg.history_period)
+
+
+def _apply_timeframe(args, cfg):
+    if getattr(args, "timeframe", None):
+        cfg.timeframe = args.timeframe
+        cfg.history_period = max_period(args.timeframe)
 
 
 def _fmt(stats: dict) -> str:
@@ -43,12 +49,13 @@ def cmd_select(args, cfg):
         for w in res["windows"]:
             print(f"  ab {w['from'][:16]}: {w['strategy'] or 'keine Strategie besteht die Kriterien'}")
         print(f"  Out-of-Sample: {_fmt(res['out_of_sample'])}")
+        print(f"  Strategiewechsel: {res['switches']} von {len(res['windows'])} Fenstern")
         journal.save(res["trades"], source="walk_forward")
         chosen = [w for w in res["windows"] if w["strategy"]]
         if chosen and res["out_of_sample"]["expectancy_r"] > 0:
             selection[m["symbol"]] = chosen[-1]["strategy"]
     from tradingbot.bot import SELECTION_FILE
-    SELECTION_FILE.write_text(json.dumps(selection, indent=2))
+    SELECTION_FILE.write_text(json.dumps({"timeframe": cfg.timeframe, "strategies": selection}, indent=2))
     print(f"\nAusgewaehlt fuer Paper Trading: {selection or 'nichts (kein Markt hat out-of-sample bestanden)'}")
 
 
@@ -64,11 +71,15 @@ def main(argv=None):
     for name in ("backtest", "select"):
         sp = sub.add_parser(name)
         sp.add_argument("--synthetic", action="store_true", help="Zufallsdaten statt echter Kurse")
+        sp.add_argument("--timeframe", help="Kerzengroesse, z. B. 5m, 15m, 1h (1h = 2 Jahre Historie)")
     sp = sub.add_parser("paper")
     sp.add_argument("--poll", type=int, default=300, help="Sekunden zwischen Abfragen")
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = load_config(args.config)
+    _apply_timeframe(args, cfg)
+    if args.cmd != "paper":
+        print(f"Kerzen: {cfg.timeframe}, Historie: {cfg.history_period}")
     {"backtest": cmd_backtest, "select": cmd_select, "paper": cmd_paper}[args.cmd](args, cfg)
 
 

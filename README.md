@@ -6,11 +6,11 @@ Aktueller Stand: **Backtest und Paper Trading mit Spielgeld**. Echtes Geld ist a
 ## Was der Bot kann
 
 - **Marktdaten** kostenlos von Yahoo Finance (5-Minuten-Kerzen, Cache in `data/`).
-- **Strategiebibliothek**: EMA-Cross (Trend), Breakout (Ausbruch), RSI-Reversion, jeweils mit mehreren Parametern.
+- **Strategiebibliothek**: EMA-Cross (Trend), Breakout (Ausbruch), RSI-Reversion, Ausbruch zur US-Eroeffnung (15:30 Uhr), VWAP-Trend, jeweils mit mehreren Parametern.
 - **Automatische SL/TP**: Stop-Loss = 1,5 x ATR, Take-Profit = 3 x Stop-Abstand (**RR 1:3**). Gesetzt vom Risk Manager, nicht von der Strategie.
 - **Risk Manager**: max. 1 % Risiko pro Trade, max. 3 % Tagesverlust (danach Pause bis zum naechsten Tag), max. offene Positionen.
 - **Lernt aus Verlusttrades**: erkennt Uhrzeiten und Volatilitaetsphasen, in denen eine Strategie systematisch verliert, und sperrt sie.
-- **Sucht sich selbst eine Strategie**: Walk-Forward-Test. Auf alten Daten waehlen, auf ungesehenen Daten pruefen. Nur was dort besteht, kommt ins Paper Trading.
+- **Sucht sich selbst eine Strategie**: Walk-Forward-Test. Auf alten Daten waehlen, auf ungesehenen Daten pruefen. Eine Strategie muss ausserdem in beiden Haelften des Trainingsfensters im Plus sein (Schutz vor Zufallstreffern). Nur was out-of-sample besteht, kommt ins Paper Trading.
 - **Trade-Journal** in SQLite (`data/journal.sqlite`).
 
 ## Installation (alter Laptop, Linux oder Windows)
@@ -30,7 +30,11 @@ tradingbot backtest         # alle Strategien auf allen Maerkten testen
 tradingbot select           # beste Strategie je Markt per Walk-Forward waehlen -> data/selection.json
 tradingbot paper            # Paper Trading starten (prueft alle 5 Minuten)
 tradingbot backtest --synthetic   # ohne Internet, mit Zufallsdaten
+tradingbot select --timeframe 1h  # 1-Stunden-Kerzen, 2 Jahre Historie (aussagekraeftiger)
+tradingbot select --timeframe 15m # 15-Minuten-Kerzen, 60 Tage
 ```
+
+`tradingbot paper` nutzt automatisch dieselbe Kerzengroesse wie das letzte `select`.
 
 Damit der Laptop dauerhaft laeuft: Energiesparmodus und Ruhezustand ausschalten, Deckel-Schliessen auf "nichts tun" stellen,
 und `tradingbot paper` z. B. in `tmux` oder als systemd-Dienst starten.

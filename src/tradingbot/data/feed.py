@@ -11,6 +11,14 @@ from tradingbot.config import ROOT
 CACHE = ROOT / "data"
 COLUMNS = ["open", "high", "low", "close", "volume"]
 
+# Wie weit Yahoo maximal zurueck liefert, je Kerzengroesse
+MAX_PERIOD = {"1m": "7d", "2m": "60d", "5m": "60d", "15m": "60d", "30m": "60d",
+              "60m": "730d", "1h": "730d", "1d": "max"}
+
+
+def max_period(interval: str) -> str:
+    return MAX_PERIOD.get(interval, "60d")
+
 
 def load_history(symbol: str, interval: str = "5m", period: str = "60d", use_cache: bool = True) -> pd.DataFrame:
     """OHLCV-Daten laden. Gibt DataFrame mit Spalten open/high/low/close/volume zurueck."""

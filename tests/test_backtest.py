@@ -26,3 +26,13 @@ def test_walk_forward_only_reports_unseen_data():
     first_test_start = df.index[cfg.selection.train_bars]
     assert all(t.entry_time >= first_test_start for t in res["trades"])
     assert "trades" in summarize(res["trades"])
+
+
+def test_us_open_breakout_max_one_signal_per_day():
+    from tradingbot.strategies.library import OpeningRangeBreakout
+    df = synthetic(3000)
+    df.index = df.index.tz_localize("UTC")
+    sig = OpeningRangeBreakout(minutes=30).signals(df)
+    ny_day = df.index.tz_convert("America/New_York").date
+    per_day = (sig != 0).groupby(ny_day).sum()
+    assert per_day.max() <= 1 and per_day.sum() > 0

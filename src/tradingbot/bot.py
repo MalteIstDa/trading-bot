@@ -17,8 +17,8 @@ log = logging.getLogger("tradingbot")
 SELECTION_FILE = ROOT / "data" / "selection.json"
 
 
-def load_selection() -> dict[str, str]:
-    """symbol -> repr der gewaehlten Strategie (geschrieben von `tradingbot select`)."""
+def load_selection() -> dict:
+    """{"timeframe": ..., "strategies": {symbol: repr der Strategie}} (geschrieben von `tradingbot select`)."""
     if SELECTION_FILE.exists():
         return json.loads(SELECTION_FILE.read_text())
     return {}
@@ -28,9 +28,11 @@ def run_paper(cfg: Config, poll_seconds: int = 300) -> None:
     if cfg.mode != "paper":
         raise SystemExit("Live-Modus ist noch nicht freigeschaltet. Erst Paper Trading.")
     by_name = {repr(s): s for s in all_candidates()}
-    selection = load_selection()
+    saved = load_selection()
+    selection = saved.get("strategies", {})
     if not selection:
         raise SystemExit("Keine Strategie ausgewaehlt. Erst `tradingbot select` ausfuehren.")
+    cfg.timeframe = saved.get("timeframe", cfg.timeframe)  # gleiche Kerzen wie bei der Auswahl
     broker = PaperBroker(cfg.start_capital, {m["symbol"]: m["point_value"] for m in cfg.markets}, cfg.fee_per_trade)
     rm = RiskManager(cfg.risk)
     last_bar: dict[str, object] = {}
@@ -42,7 +44,7 @@ def run_paper(cfg: Config, poll_seconds: int = 300) -> None:
             if strat is None:
                 continue
             try:
-                df = load_history(symbol, cfg.timeframe, "5d", use_cache=False)
+                df = load_history(symbol, cfg.timeframe, "5d" if cfg.timeframe in ("1m", "2m", "5m") else "60d", use_cache=False)
             except Exception as e:  # Netzwerkfehler duerfen den Bot nicht beenden
                 log.warning("%s: Daten-Fehler %s", symbol, e)
                 continue
