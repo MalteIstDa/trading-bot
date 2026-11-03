@@ -56,27 +56,41 @@ def _num(x: float):
     return None if x is None or x != x or abs(x) == float("inf") else round(float(x), 4)
 
 
-def write_dashboard(cfg: Config, broker, strategies: dict[str, str], frames: dict) -> None:
-    """Schreibt den aktuellen Stand fuer `tradingbot dashboard` (data/dashboard.json + Kontoverlauf)."""
+def _candles(df) -> list[list]:
+    tail = df.tail(200)
+    return [[int(ts.timestamp()), _num(r.open), _num(r.high), _num(r.low), _num(r.close)]
+            for ts, r in zip(tail.index, tail.itertuples())]
+
+
+def write_dashboard(cfg: Config, broker, strategies: dict[str, str], frames: dict, extra: dict | None = None) -> None:
+    """Schreibt den aktuellen Stand fuer `tradingbot dashboard` (data/dashboard.json + Kontoverlauf).
+    extra: optionale Zusatzdaten, z. B. {"traders": [...], "watchlist": {coin: df}, "events": [...]}."""
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     markets = {}
+    unrealized = 0.0
     for symbol, strat_name in strategies.items():
         df = frames.get(symbol)
         pos = broker.open_positions().get(symbol)
-        candles = []
-        if df is not None:
-            tail = df.tail(200)
-            candles = [[int(ts.timestamp()), _num(r.open), _num(r.high), _num(r.low), _num(r.close)]
-                       for ts, r in zip(tail.index, tail.itertuples())]
+        candles = [] if df is None else _candles(df)
+        last = candles[-1][4] if candles else None
+        open_pnl = None
+        if pos is not None and last is not None:
+            open_pnl = (last - pos.entry) * pos.side * pos.contracts * broker.point_values.get(symbol, 1.0)
+            unrealized += open_pnl
         markets[symbol] = {
             "name": cfg.market(symbol)["name"], "strategy": strat_name, "candles": candles,
             "position": None if pos is None else {
                 "side": pos.side, "entry": _num(pos.entry), "stop_loss": _num(pos.stop_loss),
-                "take_profit": _num(pos.take_profit), "contracts": pos.contracts},
+                "take_profit": _num(pos.take_profit), "contracts": pos.contracts,
+                "last": last, "unrealized": _num(open_pnl)},
         }
-    DASHBOARD_JSON.write_text(json.dumps({
-        "updated": now, "mode": "paper", "timeframe": cfg.timeframe, "exit_mode": cfg.risk.exit_mode,
-        "start_capital": cfg.start_capital, "equity": round(broker.equity(), 2), "markets": markets}))
+    state = {"updated": now, "mode": "paper", "timeframe": cfg.timeframe, "exit_mode": cfg.risk.exit_mode,
+             "start_capital": cfg.start_capital, "equity": round(broker.equity(), 2),
+             "unrealized": round(unrealized, 2), "markets": markets}
+    state.update(extra or {})
+    if "watchlist" in state:
+        state["watchlist"] = {coin: {"candles": _candles(df)} for coin, df in state["watchlist"].items()}
+    DASHBOARD_JSON.write_text(json.dumps(state))
     new = not EQUITY_CSV.exists()
     with EQUITY_CSV.open("a", newline="") as f:
         if new:
