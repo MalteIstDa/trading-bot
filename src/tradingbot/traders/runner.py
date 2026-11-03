@@ -12,7 +12,7 @@ from tradingbot import bot
 from tradingbot.config import Config
 from tradingbot.traders import hyperliquid as hl
 from tradingbot.traders.analysis import (DAY_MS, close_times, open_signals, prefilter, score_trader,
-                                         simulate_copy, summarize_r)
+                                         simulate_copy, spot_share, summarize_r)
 
 log = logging.getLogger("tradingbot")
 
@@ -33,7 +33,7 @@ def _short(addr: str) -> str:
 
 def _fmt(s: dict) -> str:
     return (f"Trades {s['trades']:4d} | WR {s['win_rate']:.0%} | PF {s['profit_factor']:.2f} | "
-            f"Exp {s['expectancy_r']:+.2f}R | Einstieg im Schnitt {s['avg_slippage_pct']:+.2f}% schlechter")
+            f"Exp {s['expectancy_r']:+.2f}R")
 
 
 def _candidates(rank_by: str, top: int) -> list[dict]:
@@ -55,6 +55,10 @@ def _load_fills(cands: list[dict], start_ms: int, end_ms: int) -> dict[str, list
             f = hl.fills(c["address"], start_ms, end_ms, cache_dir=_dir())
         except Exception as e:
             print(f"  {_short(c['address'])}: Fehler {e}")
+            continue
+        if f and spot_share(f) > 0.2:
+            print(f"  [{i}/{len(cands)}] {_short(c['address'])}: handelt viel Spot (meist Hedge/Basis-Trade), "
+                  "nicht kopierbar, uebersprungen")
             continue
         if len(f) >= hl.MAX_FILLS:
             print(f"  [{i}/{len(cands)}] {_short(c['address'])}: zu viele Trades (Hochfrequenz), uebersprungen")
@@ -150,7 +154,7 @@ def test(cfg: Config, train_days: int = 30, test_days: int = 10, windows: int = 
         rows.append((label, len(chosen), w_own, summarize_r(w_trades)))
 
     print(f"\n== Walk-Forward: {train_days} Tage auswaehlen, {test_days} Tage kopieren, "
-          f"{delay_s}s Verzoegerung, {interval}-Kerzen ==")
+          f"{delay_s}s Verzoegerung + 0,05 % Aufschlag, nur Perps ==")
     for label, n, own, st in rows:
         print(f"  ab {label}: {n} Trader | deren eigener Gewinn danach {own:+12,.0f} $ | Kopie: {_fmt(st)}")
     total = summarize_r(all_trades)

@@ -45,7 +45,7 @@ def test_signals_only_new_positions_and_flips():
     sig = an.open_signals(fills)
     assert [(s["coin"], s["side"]) for s in sig] == [("BTC", 1), ("ETH", -1), ("ETH", 1)]
     cl = an.close_times(fills)
-    assert cl["BTC"] == [(T0 + 2, 1)] and cl["ETH"] == [(T0 + 4, -1)]
+    assert [c[:2] for c in cl["BTC"]] == [(T0 + 2, 1)] and [c[:2] for c in cl["ETH"]] == [(T0 + 4, -1)]
 
 
 def _trending_candles(n=600, start=T0, up=True):
@@ -139,3 +139,20 @@ def test_fills_pagination_both_directions(monkeypatch, newest_first):
     monkeypatch.setattr(hl.time, "sleep", lambda s: None)
     got = hl.fills("0xabc", T0, T0 + 2_000_000)
     assert len(got) == 1700 and got[0]["time"] == T0
+
+
+def test_partial_fills_of_one_order_are_one_signal_and_spot_is_ignored():
+    # grosse Order in 3 Teil-Fills: startPosition bleibt bei 0 (so liefert es die API bei Spot/Teil-Fills)
+    fl = [dict(fill(T0 + i, "BTC", "B", 1, 0, 100), oid=7) for i in range(3)]
+    fl += [fill(T0 + 10, "@107", "B", 5, 0, 30), fill(T0 + 11, "xyz:GOLD", "B", 1, 0, 2000)]
+    sig = an.open_signals(fl)
+    assert [(s["coin"], s["side"]) for s in sig] == [("BTC", 1)]
+    assert an.spot_share(fl) > 0.2
+
+
+def test_copy_never_uses_prices_before_entry():
+    cfg = Config(fee_pct=0.045, risk=RiskConfig())
+    df = _trending_candles(up=False)
+    sig = [{"time": T0 + 100 * 900_000 + 1, "coin": "BTC", "side": 1, "px": float(df["close"].iloc[100])}]
+    tr = an.simulate_copy(sig, {}, {"BTC": df}, cfg, "0xabc")
+    assert tr and pd.Timestamp(tr[0].entry_time) > df.index[100]

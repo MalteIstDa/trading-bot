@@ -91,33 +91,81 @@ def score_trader(address: str, fills: list[dict], start_ms: int, end_ms: int) ->
 
 # ---------- 3) Copy-Signale ----------
 
-def _is_flat(x: float) -> bool:
-    return abs(x) < 1e-12
+def is_perp(coin: str) -> bool:
+    """Nur normale Perpetuals kopieren. '@107' / 'PURR/USDC' sind Spot, 'xyz:...' sind HIP-3-Maerkte."""
+    return not (coin.startswith("@") or "/" in coin or ":" in coin)
+
+
+def spot_share(fills: list[dict]) -> float:
+    """Anteil des Handelsvolumens auf Spot. Hoch = oft ein Hedge (Spot long + Perp short), nicht kopierbar."""
+    spot = total = 0.0
+    for f in fills:
+        n = abs(float(f["sz"]) * float(f["px"]))
+        total += n
+        if not is_perp(f["coin"]):
+            spot += n
+    return spot / total if total else 0.0
+
+
+def _flat(x: float, scale: float) -> bool:
+    return abs(x) <= 1e-6 * max(scale, 1e-12)
+
+
+def position_events(fills: list[dict]) -> list[dict]:
+    """Rekonstruiert die Position je Coin selbst, statt startPosition jedes Fills zu vertrauen
+    (bei grossen Orders bleibt startPosition ueber viele Teil-Fills gleich).
+    Teil-Fills derselben Order (oid) werden zu einem Ereignis zusammengefasst."""
+    events: list[dict] = []
+    pos: dict[str, float] = {}
+    cur = None
+    for f in sorted(fills, key=lambda x: (x["time"], str(x.get("tid", "")))):
+        coin = f["coin"]
+        if not is_perp(coin):
+            continue
+        signed = float(f["sz"]) * (1 if f["side"] == "B" else -1)
+        px = float(f["px"])
+        if cur and cur["coin"] == coin and f.get("oid") is not None and cur["oid"] == f.get("oid"):
+            cur["size"] += signed
+            cur["notional"] += abs(signed) * px
+            continue
+        if cur:
+            events.append(cur)
+        cur = {"time": f["time"], "coin": coin, "oid": f.get("oid"), "size": signed, "notional": abs(signed) * px,
+               "start": float(f.get("startPosition", 0))}
+    if cur:
+        events.append(cur)
+    out = []
+    for e in events:
+        before = pos.get(e["coin"], e["start"])  # erste Sicht auf den Coin: Startposition der API
+        after = before + e["size"]
+        pos[e["coin"]] = after
+        scale = max(abs(before), abs(e["size"]))
+        out.append({"time": e["time"], "coin": e["coin"], "before": 0.0 if _flat(before, scale) else before,
+                    "after": 0.0 if _flat(after, scale) else after,
+                    "px": e["notional"] / abs(e["size"]) if e["size"] else 0.0})
+    return out
 
 
 def open_signals(fills: list[dict], start_ms: int = 0, end_ms: int | None = None) -> list[dict]:
     """Neue Positionen (vorher flach -> Long/Short) und Positionswechsel.
-    Teilkaeufe in eine bestehende Position zaehlen NICHT als neues Signal."""
+    Nachkaeufe in eine bestehende Position zaehlen NICHT als neues Signal."""
     out = []
-    for f in fills:
-        if f["time"] < start_ms or (end_ms and f["time"] > end_ms):
+    for e in position_events(fills):
+        if e["time"] < start_ms or (end_ms and e["time"] > end_ms):
             continue
-        start = float(f.get("startPosition", 0))
-        signed = float(f["sz"]) * (1 if f["side"] == "B" else -1)
-        after = start + signed
-        if _is_flat(start) and not _is_flat(after) or (start * after < 0):
-            out.append({"time": f["time"], "coin": f["coin"], "side": 1 if after > 0 else -1, "px": float(f["px"])})
+        b, a = e["before"], e["after"]
+        if (b == 0 and a != 0) or (b * a < 0):
+            out.append({"time": e["time"], "coin": e["coin"], "side": 1 if a > 0 else -1, "px": e["px"]})
     return out
 
 
-def close_times(fills: list[dict]) -> dict[str, list[tuple[int, int]]]:
-    """Wann ein Trader eine Position komplett schliesst oder dreht: {coin: [(zeit, seite_vorher)]}"""
+def close_times(fills: list[dict]) -> dict[str, list[tuple[int, int, float]]]:
+    """Wann ein Trader eine Position komplett schliesst oder dreht: {coin: [(zeit, seite_vorher, preis)]}"""
     out: dict[str, list] = {}
-    for f in fills:
-        start = float(f.get("startPosition", 0))
-        after = start + float(f["sz"]) * (1 if f["side"] == "B" else -1)
-        if not _is_flat(start) and (_is_flat(after) or start * after < 0):
-            out.setdefault(f["coin"], []).append((f["time"], 1 if start > 0 else -1))
+    for e in position_events(fills):
+        b, a = e["before"], e["after"]
+        if b != 0 and (a == 0 or b * a < 0):
+            out.setdefault(e["coin"], []).append((e["time"], 1 if b > 0 else -1, e["px"]))
     return out
 
 
@@ -134,41 +182,47 @@ class CopyTrade:
     exit: float
     reason: str
     r_multiple: float
-    slippage_pct: float  # wie viel schlechter wir einsteigen als der Trader (in %)
+    slippage_pct: float  # angenommener Aufschlag gegenueber dem Preis des Traders (in %)
 
 
 def simulate_copy(signals: list[dict], closes: dict, candles: dict[str, pd.DataFrame], cfg: Config,
-                  trader: str, delay_ms: int = 60_000, follow_exit: bool = True) -> list[CopyTrade]:
-    """Jedes Signal wird mit Verzoegerung zur Eroeffnung der naechsten Kerze kopiert.
-    SL/TP setzt unser Risk Manager (RR 1:3). follow_exit: zusaetzlich aussteigen, wenn der Trader schliesst."""
+                  trader: str, delay_ms: int = 60_000, follow_exit: bool = True,
+                  slippage_pct: float = 0.05) -> list[CopyTrade]:
+    """Kopiert jedes Signal `delay_ms` spaeter zum Preis des Traders plus `slippage_pct` Aufschlag
+    (Annahme fuer Kursbewegung in der Verzoegerung). SL/TP prueft erst ab der naechsten vollen Kerze,
+    damit keine Kurse von VOR dem Einstieg zaehlen. SL/TP setzt unser Risk Manager (RR 1:3).
+    follow_exit: zusaetzlich aussteigen, wenn der Trader schliesst (zu seinem Preis plus Aufschlag)."""
     rm = RiskManager(cfg.risk)
     out = []
+    slip = slippage_pct / 100
     for s in signals:
         df = candles.get(s["coin"])
         if df is None or df.empty:
             continue
-        t_entry = pd.to_datetime(s["time"] + delay_ms, unit="ms", utc=True)
-        later = df.index[df.index >= t_entry]
-        if not len(later):
+        t_entry_ms = s["time"] + delay_ms
+        starts = ((df.index - pd.Timestamp(0, tz="UTC")) // pd.Timedelta(milliseconds=1)).to_numpy()  # unabhaengig von ns/ms
+        after = np.nonzero(starts >= t_entry_ms)[0]
+        if not len(after):
             continue
-        i0 = df.index.get_loc(later[0])
+        i0 = int(after[0])
         if i0 < cfg.risk.atr_period + 1:
             continue
         a = atr(df.iloc[:i0], cfg.risk.atr_period).iloc[-1]
-        entry = float(df["open"].iloc[i0])
+        entry = s["px"] * (1 + s["side"] * slip)
         plan = rm.plan(s["side"], entry, float(a), 1e9, 1.0, 0, 1e-12)  # Groesse egal, wir rechnen in R
         if plan is None:
             continue
-        exit_ms = None
+        exit_ms = exit_px_trader = None
         if follow_exit:
-            later_closes = [t for t, side in closes.get(s["coin"], []) if t > s["time"] and side == s["side"]]
-            exit_ms = later_closes[0] + delay_ms if later_closes else None
+            nxt = [(t, px) for t, side, px in closes.get(s["coin"], []) if t > s["time"] and side == s["side"]]
+            if nxt:
+                exit_ms, exit_px_trader = nxt[0][0] + delay_ms, nxt[0][1]
         reason, exit_px = "end", float(df["close"].iloc[-1])
         for i in range(i0, len(df)):
-            bar = df.iloc[i]
-            if exit_ms is not None and df.index[i].value // 1_000_000 >= exit_ms:
-                reason, exit_px = "trader_exit", float(bar["open"])
+            if exit_ms is not None and starts[i] >= exit_ms:
+                reason, exit_px = "trader_exit", exit_px_trader * (1 - s["side"] * slip)
                 break
+            bar = df.iloc[i]
             res = plan.check_exit(float(bar["high"]), float(bar["low"]))
             if res:
                 reason, exit_px = res
@@ -177,7 +231,7 @@ def simulate_copy(signals: list[dict], closes: dict, candles: dict[str, pd.DataF
         fees = cfg.fee_pct / 100 * (entry + exit_px)
         r = ((exit_px - entry) * s["side"] - fees) / plan.initial_risk
         out.append(CopyTrade(trader, s["coin"], s["side"], s["time"], str(df.index[i0]), entry, exit_px, reason,
-                             float(r), float((entry - s["px"]) / s["px"] * 100 * s["side"])))
+                             float(r), slippage_pct))
     return out
 
 
