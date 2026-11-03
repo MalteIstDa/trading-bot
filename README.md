@@ -103,9 +103,19 @@ In einem zweiten Terminalfenster (der Paper-Bot muss laufen):
 tradingbot dashboard
 ```
 
-Oeffnet `http://localhost:8050` im Browser: Kontostand, Kontoverlauf, Charts aller Maerkte mit Einstieg/SL/TP
-der offenen Positionen, Trefferquote, Gewinn pro Trade (R) und alle Trades. Aktualisiert sich alle 5 Sekunden.
-Laeuft nur lokal auf deinem Rechner.
+Oeffnet `http://localhost:8050` im Browser und aktualisiert sich alle 5 Sekunden. Laeuft nur lokal auf deinem Rechner,
+liest nur Dateien und oeffentliche Hyperliquid-Daten und kann selbst keine Orders ausloesen.
+
+- **Uebersicht:** Konto, Kontoverlauf, offene Positionen mit unrealisiertem Gewinn, Ereignisse.
+- **Charts:** Live-Chart von Hyperliquid (auch ohne laufenden Bot) mit Einstieg, Ausstieg, SL und TP, Coin und Kerzengroesse waehlbar.
+  Dazu die Maerkte des Bots und die Coins der kopierten Trader.
+- **Trades:** alle abgeschlossenen Trades mit Filtern und CSV-Export.
+- **Statistik:** Drawdown, bester und schlechtester Trade, Verlustserie, Verteilung in R, Gewinn pro Tag,
+  Auswertung nach Markt, Ausstieg und Trader.
+- **Copy-Trading:** ausgewaehlte Trader, ihre aktuellen Positionen, ihr Abschneiden im Copy-Test und das letzte Walk-Forward-Ergebnis.
+  Das Dashboard warnt, wenn ein Trader im Test gar nicht vorkam.
+
+Oben rechts neben dem Titel laesst sich zwischen Futures, Krypto und Copy-Trading wechseln, sobald dafuer Daten vorliegen.
 
 ### Paper-Testlauf (Technik pruefen, ohne bestandene Strategie)
 
