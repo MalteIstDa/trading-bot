@@ -156,3 +156,37 @@ def test_copy_never_uses_prices_before_entry():
     sig = [{"time": T0 + 100 * 900_000 + 1, "coin": "BTC", "side": 1, "px": float(df["close"].iloc[100])}]
     tr = an.simulate_copy(sig, {}, {"BTC": df}, cfg, "0xabc")
     assert tr and pd.Timestamp(tr[0].entry_time) > df.index[100]
+
+
+def test_watch_copies_new_position_and_follows_exit(monkeypatch, tmp_path):
+    from tradingbot import bot
+    from tradingbot.traders import runner
+    monkeypatch.setattr(bot, "DATA", tmp_path)
+    monkeypatch.setattr(bot, "STATE_FILE", tmp_path / "state.json")
+    monkeypatch.setattr(bot, "TRADES_CSV", tmp_path / "trades.csv")
+    monkeypatch.setattr(bot, "write_dashboard", lambda *a, **k: None)
+    monkeypatch.setattr(runner.time, "sleep", lambda s: None)
+    (tmp_path / "traders").mkdir()
+    (tmp_path / "traders" / "selected.json").write_text(json.dumps(
+        {"created": runner._now_ms(), "traders": [{"address": "0xgood", "t_stat": 3}]}))
+    # Runde 1: flach, Runde 2: eroeffnet BTC long, Runde 3: geschlossen
+    states = iter([{}, {"BTC": {"size": 1.0, "entry": 100}}, {}])
+    monkeypatch.setattr(hl, "positions", lambda a: next(states))
+    monkeypatch.setattr(hl, "size_decimals", lambda: {"BTC": 5})
+    monkeypatch.setattr(hl, "candles", lambda coin, iv, s, e=None: _trending_candles(300, s))
+    cfg = Config(start_capital=1000, fee_pct=0.045, risk=RiskConfig(risk_per_trade_pct=2))
+    runner.watch(cfg, poll_seconds=0, rescan_hours=0, max_loops=3)
+    rows = (tmp_path / "trades.csv").read_text().splitlines()
+    assert len(rows) == 2 and "0xgood" in rows[1]
+    kinds = [e["type"] for e in runner.recent_events()]
+    assert "copy" in kinds and "close" in kinds
+
+
+def test_notify_is_silent_without_settings(monkeypatch, tmp_path):
+    from tradingbot import notify
+    monkeypatch.setattr(notify, "ROOT", tmp_path)
+    monkeypatch.delenv("TELEGRAM_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    assert not notify.enabled() and notify.send("hallo") is False
+    (tmp_path / ".env").write_text("TELEGRAM_TOKEN=abc\nTELEGRAM_CHAT_ID='42'\n")
+    assert notify._settings() == ("abc", "42")

@@ -6,13 +6,14 @@ import logging
 import time
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from tradingbot import bot
 from tradingbot.config import Config
 from tradingbot.traders import hyperliquid as hl
 from tradingbot.traders.analysis import (DAY_MS, close_times, open_signals, prefilter, score_trader,
-                                         simulate_copy, spot_share, summarize_r)
+                                         is_perp, simulate_copy, spot_share, summarize_r)
 
 log = logging.getLogger("tradingbot")
 
@@ -172,18 +173,60 @@ def test(cfg: Config, train_days: int = 30, test_days: int = 10, windows: int = 
     return {"total": total, "passed": verdict}
 
 
-def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m") -> None:
+def _ms(index) -> "np.ndarray":
+    """Zeitstempel eines DatetimeIndex in Millisekunden, egal ob pandas intern ns oder ms nutzt."""
+    return ((index - pd.Timestamp(0, tz="UTC")) // pd.Timedelta(milliseconds=1)).to_numpy()
+
+
+def _event(kind: str, text: str, push: bool = True) -> None:  # kind: copy|close|risk|scan|info
+    """Ereignis ins Log, in data/.../traders/events.jsonl (fuer das Dashboard) und optional aufs Handy."""
+    from tradingbot import notify
+    log.info(text)
+    row = {"time": pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds"), "type": kind, "text": text}
+    f = _dir() / "events.jsonl"
+    with f.open("a") as fh:
+        fh.write(json.dumps(row) + "\n")
+    if push:
+        notify.send(text)
+
+
+def recent_events(n: int = 50) -> list[dict]:
+    f = _dir() / "events.jsonl"
+    if not f.exists():
+        return []
+    lines = f.read_text().splitlines()[-n:]
+    out = []
+    for line in reversed(lines):
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            continue
+    return out
+
+
+def _load_selection() -> list[dict]:
+    sel_file = _dir() / "selected.json"
+    if not sel_file.exists():
+        return []
+    return json.loads(sel_file.read_text()).get("traders", [])
+
+
+def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m", rescan_hours: float = 24,
+          max_loops: int | None = None) -> None:
     """Paper-Copy-Trading: verfolgt die Positionen der ausgewaehlten Konten und kopiert neue Positionen mit Spielgeld.
-    Unser Risk Manager setzt SL/TP. Schliesst der Trader, schliessen wir auch."""
+    Unser Risk Manager setzt SL/TP (RR 1:3), begrenzt den Tagesverlust und die Anzahl offener Positionen.
+    Schliesst der Trader, schliessen wir auch. Alle `rescan_hours` Stunden werden die Trader neu ausgewaehlt."""
+    from datetime import datetime, timezone
+
     from tradingbot.execution.paper import PaperBroker
     from tradingbot.risk.manager import RiskManager
     from tradingbot.strategies.base import atr
 
+    selection = _load_selection()
     sel_file = _dir() / "selected.json"
     if not sel_file.exists():
         raise SystemExit("Noch keine Trader ausgewaehlt. Erst `tradingbot traders scan` ausfuehren.")
-    traders = [t["address"] for t in json.loads(sel_file.read_text())["traders"]]
-    if not traders:
+    if not selection:
         raise SystemExit("Der Scan hat keine Trader ausgewaehlt, die die Kriterien erfuellen.")
     broker = PaperBroker(cfg.start_capital, {}, cfg.fee_per_trade, state_file=bot.STATE_FILE, fee_pct=cfg.fee_pct)
     rm = RiskManager(cfg.risk)
@@ -194,10 +237,40 @@ def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m") -> None:
     checked: dict[str, int] = {}  # coin -> letzte gepruefte 1m-Kerze (ms)
     last: dict[str, dict] = {}
     frames: dict[str, pd.DataFrame] = {}
+    watch_frames: dict[str, pd.DataFrame] = {}
     min_notional = 10.0  # Hyperliquid: Mindestgroesse einer Order 10 $
-    log.info("Copy-Paper-Trading gestartet: %s | Konto %.2f", [_short(t) for t in traders], broker.equity())
+    last_scan = json.loads(sel_file.read_text()).get("created", _now_ms())
+    was_halted = False
+    loop = 0
 
-    while True:
+    def candles_15m(coin):
+        df = hl.candles(coin, interval, _now_ms() - 3 * DAY_MS)
+        frames[coin] = df
+        return df
+
+    _event("info", f"Copy-Bot gestartet (Spielgeld): kopiere {', '.join(_short(t['address']) for t in selection)} "
+                    f"| Konto {broker.equity():.2f} $", push=False)
+
+    while max_loops is None or loop < max_loops:
+        loop += 1
+        # Trader taeglich neu auswaehlen. Wer noch eine von uns kopierte Position hat, wird weiter beobachtet.
+        if rescan_hours and _now_ms() - last_scan > rescan_hours * 3_600_000:
+            try:
+                fresh = scan(cfg)
+                if fresh:
+                    selection = fresh
+                _event("scan", f"Trader neu ausgewaehlt: {', '.join(_short(t['address']) for t in selection)}")
+            except Exception as e:
+                log.warning("Neuauswahl fehlgeschlagen, behalte bisherige Trader: %s", e)
+            last_scan = _now_ms()
+        traders = [t["address"] for t in selection]
+        traders += [o["trader"] for c, o in owner.items() if c in broker.open_positions() and o["trader"] not in traders]
+
+        rm.new_bar(datetime.now(timezone.utc).date(), broker.equity())
+        if rm.halted and not was_halted:
+            _event("risk", f"Tagesverlust-Limit ({cfg.risk.max_daily_loss_pct:g} %) erreicht: heute keine neuen Trades mehr")
+        was_halted = rm.halted
+
         for t in traders:
             try:
                 pos = hl.positions(t)
@@ -209,63 +282,104 @@ def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m") -> None:
             if prev is None:  # Start: bestehende Positionen nicht nachkaufen, nur neue kopieren
                 continue
             for coin, p in pos.items():
+                if not is_perp(coin):
+                    continue
                 side = 1 if p["size"] > 0 else -1
                 was = prev.get(coin)
                 is_new = was is None or (was["size"] > 0) != (p["size"] > 0)
-                if not is_new or coin in broker.open_positions():
+                if not is_new or coin in broker.open_positions() or t not in [x["address"] for x in selection]:
                     continue
-                df = hl.candles(coin, interval, _now_ms() - 3 * DAY_MS)
-                frames[coin] = df
+                try:
+                    df = candles_15m(coin)
+                except Exception as e:
+                    log.warning("%s Kerzen: %s", coin, e)
+                    continue
                 if len(df) < cfg.risk.atr_period + 2:
                     continue
                 entry = float(df["close"].iloc[-1])
                 step = 10 ** -decimals.get(coin, 3)
                 plan = rm.plan(side, entry, float(atr(df, cfg.risk.atr_period).iloc[-1]), broker.equity(), 1.0,
                                len(broker.open_positions()), step)
+                name = f"{coin} {'LONG' if side > 0 else 'SHORT'}"
                 if plan is None:
-                    log.info("%s kopiert %s %s nicht: Konto zu klein fuer das Risiko", _short(t), coin, side)
+                    why = ("Tageslimit erreicht" if rm.halted else
+                           "schon max. Positionen offen" if len(broker.open_positions()) >= cfg.risk.max_open_positions
+                           else "Konto zu klein fuer das Risiko")
+                    _event("info", f"{_short(t)} eroeffnet {name}, nicht kopiert: {why}", push=False)
                     continue
                 if plan.contracts * entry < min_notional:
-                    log.info("%s %s uebersprungen: Order %.2f $ unter Mindestgroesse %.0f $ (echtes Konto ginge nicht)",
-                             _short(t), coin, plan.contracts * entry, min_notional)
+                    _event("info", f"{_short(t)} eroeffnet {name}, nicht kopiert: Order {plan.contracts * entry:.2f} $ "
+                                   f"unter Mindestgroesse {min_notional:.0f} $", push=False)
                     continue
                 broker.place_bracket(coin, plan)
                 owner[coin] = {"trader": t, "opened": _now_ms()}
                 owner_file.write_text(json.dumps(owner))
-                log.info("KOPIERT von %s: %s %s @ %.4f | SL %.4f | TP %.4f | Menge %g", _short(t), coin,
-                         "LONG" if side > 0 else "SHORT", entry, plan.stop_loss, plan.take_profit, plan.contracts)
+                _event("copy", f"KOPIERT von {_short(t)}: {name} @ {entry:.4g} | SL {plan.stop_loss:.4g} | "
+                               f"TP {plan.take_profit:.4g} | Menge {plan.contracts:g}")
             for coin, plan in list(broker.open_positions().items()):
                 if owner.get(coin, {}).get("trader") != t:
                     continue
                 p = pos.get(coin)
                 if p is None or (p["size"] > 0) != (plan.side > 0):  # Trader hat geschlossen/gedreht
-                    df = hl.candles(coin, interval, _now_ms() - 3 * DAY_MS)
-                    frames[coin] = df
+                    try:
+                        df = candles_15m(coin)
+                    except Exception as e:
+                        log.warning("%s Kerzen: %s", coin, e)
+                        continue
                     closed = broker.close(coin, float(df["close"].iloc[-1]), "trader_exit")
                     if closed:
-                        bot._log_trade(closed)
-                        log.info("Trader hat %s geschlossen, wir auch: PnL %.2f", coin, closed["pnl"])
+                        bot._log_trade({**closed, "trader": owner.get(coin, {}).get("trader", ""), "opened": owner.get(coin, {}).get("opened", "")})
+                        _event("close", f"{coin}: Trader ist ausgestiegen, wir auch | {closed['pnl']:+.2f} $ "
+                                        f"({closed['r_multiple']:+.2f}R) | Konto {closed['equity']:.2f} $")
             time.sleep(0.3)
         # SL/TP pruefen: nur abgeschlossene 1m-Kerzen nach dem Einstieg, jede nur einmal
         for coin in list(broker.open_positions()):
             since = max(checked.get(coin, 0), owner.get(coin, {}).get("opened", _now_ms() - 10 * 60_000))
             try:
                 df = hl.candles(coin, "1m", since)
-                frames[coin] = hl.candles(coin, interval, _now_ms() - 3 * DAY_MS)
+                candles_15m(coin)
             except Exception as e:
                 log.warning("%s Kerzen: %s", coin, e)
                 continue
-            done = df[(df.index.astype("int64") // 1_000_000 + 60_000) <= _now_ms()]
-            done = done[done.index.astype("int64") // 1_000_000 >= since]
-            for ts, bar in done.iterrows():
-                checked[coin] = int(ts.value // 1_000_000) + 60_000
-                for closed in broker.on_price(coin, bar["high"], bar["low"], bar["close"]):
-                    bot._log_trade(closed)
-                    log.info("%s geschlossen (%s): PnL %.2f", coin, closed["reason"], closed["pnl"])
+            if df.empty:
+                continue
+            ms = _ms(df.index)
+            done = df[(ms + 60_000 <= _now_ms()) & (ms >= since)]
+            for ts, bar in zip(_ms(done.index), done.itertuples()):
+                checked[coin] = int(ts) + 60_000
+                for closed in broker.on_price(coin, bar.high, bar.low, bar.close):
+                    bot._log_trade({**closed, "trader": owner.get(coin, {}).get("trader", ""), "opened": owner.get(coin, {}).get("opened", "")})
+                    label = {"tp": "Ziel (TP) erreicht", "sl": "Stop (SL) ausgeloest", "trail": "Trailing Stop"}
+                    _event("close", f"{coin}: {label.get(closed['reason'], closed['reason'])} | {closed['pnl']:+.2f} $ "
+                                    f"({closed['r_multiple']:+.2f}R) | Konto {closed['equity']:.2f} $")
+        # Watchlist fuer die Charts: was die kopierten Trader gerade halten (alle 5 Runden aktualisiert)
+        held = {}
+        for t in [x["address"] for x in selection]:
+            for coin, p in last.get(t, {}).items():
+                if is_perp(coin):
+                    held[coin] = held.get(coin, 0) + abs(p["size"] * p["entry"])
+        coins = [c for c, _ in sorted(held.items(), key=lambda kv: -kv[1]) if c not in broker.open_positions()][:4]
+        if loop % 5 == 1:
+            for coin in coins:
+                try:
+                    watch_frames[coin] = hl.candles(coin, interval, _now_ms() - 3 * DAY_MS)
+                except Exception as e:
+                    log.warning("%s Kerzen: %s", coin, e)
         log.info("Konto: %.2f | offen: %s", broker.equity(), list(broker.open_positions()) or "-")
         strategies = {c: f"Kopie von {_short(owner.get(c, {}).get('trader', '?'))}" for c in broker.open_positions()}
+        extra = {
+            "mode": "copy", "currency": "USD", "halted": rm.halted,
+            "traders": [{**x, "short": _short(x["address"]), "positions": last.get(x["address"], {})}
+                        for x in selection],
+            "watchlist": {c: watch_frames[c] for c in coins if c in watch_frames},
+            "events": recent_events(50),
+        }
         try:
-            bot.write_dashboard(cfg, broker, strategies, frames)
+            try:
+                bot.write_dashboard(cfg, broker, strategies, frames, extra=extra)
+            except TypeError:  # aeltere write_dashboard-Version ohne extra
+                bot.write_dashboard(cfg, broker, strategies, frames)
         except Exception as e:
             log.warning("Dashboard: %s", e)
-        time.sleep(poll_seconds)
+        if max_loops is None or loop < max_loops:
+            time.sleep(poll_seconds)

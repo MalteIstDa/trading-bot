@@ -91,7 +91,41 @@ def cmd_traders(args, cfg):
         runner.test(cfg, train_days=args.days, test_days=args.test_days, windows=args.windows,
                     top=args.top, keep=args.keep, delay_s=args.delay, min_t=args.min_t)
     else:
-        runner.watch(cfg, poll_seconds=args.poll)
+        runner.watch(cfg, poll_seconds=args.poll, rescan_hours=args.rescan_hours)
+
+
+def cmd_status(args, cfg):
+    """Kurzer Ueberblick im Terminal: Konto, offene Positionen, letzte Trades und Ereignisse."""
+    import csv
+    import json
+    from tradingbot import bot
+    print(f"Datenordner: {bot.DATA}")
+    if bot.STATE_FILE.exists():
+        st = json.loads(bot.STATE_FILE.read_text())
+        print(f"Konto (Spielgeld): {st['equity']:.2f} $ (Start {cfg.start_capital:g} $)")
+        for sym, p in st["positions"].items():
+            print(f"  offen: {sym} {'LONG' if p['side'] > 0 else 'SHORT'} {p['contracts']:g} @ {p['entry']:.4g} "
+                  f"| SL {p['stop_loss']:.4g} | TP {p['take_profit']:.4g}")
+        if not st["positions"]:
+            print("  keine offenen Positionen")
+    else:
+        print("Noch kein Paper-Konto in diesem Ordner.")
+    if bot.TRADES_CSV.exists():
+        with bot.TRADES_CSV.open(newline="") as f:
+            rows = list(csv.DictReader(f))
+        wins = sum(1 for r in rows if float(r["pnl"]) > 0)
+        print(f"Abgeschlossene Trades: {len(rows)} | Gewinner: {wins} | "
+              f"Summe: {sum(float(r['pnl']) for r in rows):+.2f} $")
+        for r in rows[-5:]:
+            print(f"  {r['time'][:16]} {r['symbol']:6s} {r['reason']:12s} {float(r['pnl']):+.2f} $")
+    ev = bot.DATA / "traders" / "events.jsonl"
+    if ev.exists():
+        print("Letzte Ereignisse:")
+        for line in ev.read_text().splitlines()[-8:]:
+            e = json.loads(line)
+            print(f"  {e['time'][:16]} {e['text']}")
+    if bot.DASHBOARD_JSON.exists():
+        print(f"Letztes Lebenszeichen des Bots: {json.loads(bot.DASHBOARD_JSON.read_text()).get('updated', '?')} (UTC)")
 
 
 def main(argv=None):
@@ -115,6 +149,7 @@ def main(argv=None):
     sp = sub.add_parser("dashboard", help="Live-Dashboard im Browser")
     sp.add_argument("--port", type=int, default=8050)
     sp.add_argument("--no-browser", action="store_true")
+    sub.add_parser("status", parents=[common], help="Kontostand, offene Positionen und letzte Trades anzeigen")
     sp = sub.add_parser("traders", parents=[common], help="Top-Trader auf Hyperliquid analysieren und kopieren")
     sp.add_argument("action", choices=["scan", "test", "watch"],
                     help="scan = beste Trader finden, test = ehrlicher Kopier-Test, watch = Paper-Copy-Trading")
@@ -125,6 +160,8 @@ def main(argv=None):
     sp.add_argument("--keep", type=int, default=5, help="Anzahl Trader, die kopiert werden")
     sp.add_argument("--delay", type=int, default=60, help="test: Sekunden Verzoegerung beim Kopieren")
     sp.add_argument("--poll", type=int, default=60, help="watch: Sekunden zwischen Abfragen")
+    sp.add_argument("--rescan-hours", type=float, default=24,
+                    help="watch: Trader alle N Stunden neu auswaehlen (0 = nie)")
     sp.add_argument("--min-t", type=float, default=0.5,
                     help="test: Mindest-t-Wert fuer die Auswahl (der Walk-Forward prueft danach, ob es Zufall war)")
     args = p.parse_args(argv)
@@ -140,7 +177,7 @@ def main(argv=None):
     if args.cmd in ("backtest", "select"):
         print(f"Kerzen: {cfg.timeframe}, Historie: {cfg.history_period}, Ausstieg: {cfg.risk.exit_mode}")
     {"backtest": cmd_backtest, "select": cmd_select, "paper": cmd_paper,
-     "dashboard": cmd_dashboard, "traders": cmd_traders}[args.cmd](args, cfg)
+     "dashboard": cmd_dashboard, "traders": cmd_traders, "status": cmd_status}[args.cmd](args, cfg)
 
 
 if __name__ == "__main__":

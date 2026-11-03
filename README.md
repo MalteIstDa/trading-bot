@@ -63,16 +63,37 @@ Auf Hyperliquid sind Positionen und Trades aller Konten oeffentlich. Der Bot nut
 ./copy-trading.sh scan        # beste Trader der letzten 30 Tage finden und bewerten
 ./copy-trading.sh test        # ehrlicher Test: Auswahl mit alten Daten, Kopieren mit 60 s Verzoegerung danach
 ./copy-trading.sh watch       # Paper-Copy-Trading mit 20 $ Spielgeld
-./copy-trading.sh dashboard   # Dashboard dazu auf http://localhost:8052
+./copy-trading.sh dashboard   # Dashboard dazu auf http://localhost:8052 (Option --no-browser)
+./copy-trading.sh status      # Kontostand, offene Positionen, letzte Trades im Terminal
 ```
 
 - **Vorauswahl:** Konto >= 50.000 $, Gewinn im letzten Monat und insgesamt, kein Hochfrequenz-Handel
   (Monatsvolumen hoechstens 150x Kontowert, sonst ist es meist ein Market Maker, den man nicht kopieren kann).
 - **Bewertung:** Gewinn-Tage, Gewinn-Wochen, t-Wert (> 2 = eher kein Zufall), Anzahl neuer Positionen pro Tag.
 - **Kopieren:** Nur neue Positionen (nicht Nachkaeufe). Unser Risk Manager setzt SL/TP mit RR 1:3.
-  Schliesst der Trader, steigen wir auch aus.
+  Schliesst der Trader, steigen wir auch aus. Nur Perpetuals; Spot- und HIP-3-Maerkte sowie Konten mit viel
+  Spot-Volumen (meist Absicherungs-Geschaefte) werden ausgelassen.
+- **Schutz:** Tagesverlust-Limit (Kill Switch) und max. offene Positionen aus `config/hyperliquid.yaml`.
+- **Neuauswahl:** `watch` waehlt die Trader alle 24 Stunden neu aus (`--rescan-hours 0` schaltet das ab).
+  Eine laufende Kopie wird trotzdem zu Ende gefuehrt.
+- **Ereignisse:** Jede Kopie, jeder Ausstieg und jedes Ueberspringen steht in `data/copy/traders/events.jsonl`
+  und im Dashboard.
 - **Grenzen:** Das Leaderboard zeigt nur heute existierende Konten (Survivorship Bias). Hyperliquid hat eine
   Mindestorder von 10 $. Mit 20 $ geht das nur mit Hebel; der Paper-Bot ueberspringt kleinere Orders.
+
+### Meldungen aufs Handy (Telegram, optional)
+
+1. In Telegram `@BotFather` anschreiben, `/newbot`, Namen vergeben. Du bekommst einen Token.
+2. Deinem neuen Bot eine Nachricht schicken, dann `https://api.telegram.org/bot<TOKEN>/getUpdates` im Browser
+   oeffnen und dort bei `"chat":{"id": ...}` die Zahl ablesen.
+3. Im Ordner `trading-bot` eine Datei `.env` anlegen (sie wird nie hochgeladen):
+
+```
+TELEGRAM_TOKEN=123456:ABC...
+TELEGRAM_CHAT_ID=987654321
+```
+
+Danach meldet der Copy-Bot jede Kopie, jeden Ausstieg und den Kill Switch aufs Handy. Ohne `.env` passiert nichts.
 
 ### Live-Dashboard
 
