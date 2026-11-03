@@ -3,7 +3,7 @@ name = "tradingbot"
 version = "0.1.0"
 description = "Automatisierter Trading Bot (Paper Trading zuerst) fuer Gold, Silber, NQ und ES"
 requires-python = ">=3.9"
-dependencies = ["pandas>=2.2", "numpy>=1.26", "pyyaml>=6.0", "yfinance>=0.2.40"]
+dependencies = ["pandas>=2.2", "numpy>=1.26", "pyyaml>=6.0", "yfinance>=0.2.40", "certifi"]
 
 [project.scripts]
 tradingbot = "tradingbot.cli:main"

@@ -3,6 +3,7 @@ Doku: https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-en
 from __future__ import annotations
 
 import json
+import ssl
 import time
 import urllib.error
 import urllib.request
@@ -13,7 +14,20 @@ import pandas as pd
 API = "https://api.hyperliquid.xyz/info"
 LEADERBOARD = "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard"
 HEADERS = {"Content-Type": "application/json", "User-Agent": "tradingbot/0.1"}
-MAX_FILLS = 10_000  # Hyperliquid liefert nur die letzten 10.000 Fills eines Kontos
+MAX_FILLS = 10_000
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """Zertifikate aus certifi nutzen. Das Python von python.org auf dem Mac hat sonst keine
+    und meldet CERTIFICATE_VERIFY_FAILED."""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+_SSL = _ssl_context()  # Hyperliquid liefert nur die letzten 10.000 Fills eines Kontos
 
 
 def _request(url: str, payload: dict | None = None, retries: int = 4):
@@ -21,7 +35,7 @@ def _request(url: str, payload: dict | None = None, retries: int = 4):
     for attempt in range(retries):
         try:
             req = urllib.request.Request(url, data=data, headers=HEADERS, method="POST" if data else "GET")
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with urllib.request.urlopen(req, timeout=30, context=_SSL) as r:
                 return json.loads(r.read())
         except urllib.error.HTTPError as e:
             if e.code == 429 and attempt < retries - 1:  # Rate Limit: kurz warten
