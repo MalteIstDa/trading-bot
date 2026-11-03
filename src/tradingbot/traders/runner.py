@@ -71,11 +71,20 @@ def _load_fills(cands: list[dict], start_ms: int, end_ms: int) -> dict[str, list
     return out
 
 
-def scan(cfg: Config, days: int = 30, top: int = 40, keep: int = 5) -> list[dict]:
+# Gleiche Auswahlregeln fuer scan (live) und test (Walk-Forward), damit der Test genau das prueft, was watch kopiert
+MIN_T, MIN_OPENS, RANK_BY = 0.5, 0.05, "account_value"
+
+
+def choose(scores: list, keep: int, min_t: float = MIN_T, min_opens: float = MIN_OPENS) -> list:
+    return [s for s in sorted(scores, key=lambda s: s.score, reverse=True)
+            if s.t_stat >= min_t and s.opens_per_day >= min_opens and s.pnl > 0][:keep]
+
+
+def scan(cfg: Config, days: int = 30, top: int = 80, keep: int = 5) -> list[dict]:
     """Bewertet die Kandidaten der letzten `days` Tage und speichert die besten fuer `watch`."""
     end = _now_ms()
     start = end - days * DAY_MS
-    cands = _candidates("month_pnl", top)
+    cands = _candidates(RANK_BY, top)
     fills = _load_fills(cands, start, end)
     scores = sorted((score_trader(a, f, start, end) for a, f in fills.items()), key=lambda s: s.score, reverse=True)
     print(f"\n== Bewertung der letzten {days} Tage ==")
@@ -84,22 +93,22 @@ def scan(cfg: Config, days: int = 30, top: int = 40, keep: int = 5) -> list[dict
     for s in scores[:15]:
         print(f"{_short(s.address):14s} {s.pnl:12,.0f} {s.profitable_days:11.0%} {s.profitable_weeks:13.0%} "
               f"{s.t_stat:7.2f} {s.opens_per_day:12.1f} {s.score:6.2f}")
-    chosen = [s.to_dict() for s in scores if s.t_stat >= 2 and s.opens_per_day >= 0.2][:keep]
+    chosen = [s.to_dict() for s in choose(scores, keep)]
     (_dir() / "selected.json").write_text(json.dumps({"created": end, "days": days, "traders": chosen}, indent=2))
     print(f"\nAusgewaehlt fuer `tradingbot traders watch`: {len(chosen)} Konten "
-          f"(t-Wert >= 2, mind. 1 neue Position alle 5 Tage)")
+          f"(t-Wert >= {MIN_T}, im Plus, mind. {MIN_OPENS} neue Positionen/Tag; gleiche Regeln wie im Test)")
     print("Wichtig: Gut in der Vergangenheit heisst nicht gut in Zukunft. Erst `tradingbot traders test` ausfuehren.")
     return chosen
 
 
 def test(cfg: Config, train_days: int = 30, test_days: int = 10, windows: int = 5, top: int = 40,
-         keep: int = 5, interval: str = "15m", delay_s: int = 60, min_t: float = 0.5,
-         min_opens: float = 0.05) -> dict:
+         keep: int = 5, interval: str = "15m", delay_s: int = 60, min_t: float = MIN_T,
+         min_opens: float = MIN_OPENS) -> dict:
     """Walk-Forward: Trader nur mit vergangenen Daten auswaehlen, ihre Trades danach mit Verzoegerung kopieren."""
     end = _now_ms()
     test_start = end - windows * test_days * DAY_MS
     start = test_start - train_days * DAY_MS
-    cands = _candidates("account_value", top)
+    cands = _candidates(RANK_BY, top)
     fills = _load_fills(cands, start, end)
     if not fills:
         raise SystemExit("Keine Trade-Daten geladen. Bitte die Ausgabe oben pruefen.")
@@ -127,7 +136,7 @@ def test(cfg: Config, train_days: int = 30, test_days: int = 10, windows: int = 
         te_end = te_start + test_days * DAY_MS
         scores = sorted((score_trader(a, f, tr_start, te_start) for a, f in fills.items()),
                         key=lambda s: s.score, reverse=True)
-        chosen = [s for s in scores if s.t_stat >= min_t and s.opens_per_day >= min_opens and s.pnl > 0][:keep]
+        chosen = choose(scores, keep, min_t, min_opens)
         if not chosen and scores:  # Diagnose: warum niemand bestanden hat
             best = scores[:3]
             print(f"  Fenster {w + 1}: niemand erfuellt t-Wert >= {min_t} und >= {min_opens} Eroeffnungen/Tag. Beste: " +
