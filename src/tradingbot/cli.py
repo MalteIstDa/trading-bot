@@ -85,6 +85,7 @@ def main(argv=None):
         sp.add_argument("--synthetic", action="store_true", help="Zufallsdaten statt echter Kurse")
         sp.add_argument("--timeframe", help="Kerzengroesse, z. B. 5m, 15m, 1h (1h = 2 Jahre Historie)")
         sp.add_argument("--exit", choices=["fixed", "trailing"], help="fixed = SL+TP 1:3, trailing = nachgezogener Stop")
+        sp.add_argument("--min-trades", type=int, help="Mindestanzahl Trades pro Fenster/Out-of-Sample (Standard 30)")
     sp = sub.add_parser("paper")
     sp.add_argument("--poll", type=int, default=60, help="Sekunden zwischen Abfragen")
     sp.add_argument("--strategy", help='Testlauf mit fester Strategie, z. B. "breakout(lookback=20)"')
@@ -97,6 +98,8 @@ def main(argv=None):
     if getattr(args, "timeframe", None):
         cfg.timeframe = args.timeframe
         cfg.history_period = max_period(args.timeframe)
+    if getattr(args, "min_trades", None):
+        cfg.selection.min_trades = args.min_trades
     if getattr(args, "exit", None):
         cfg.risk.exit_mode = args.exit
     if args.cmd != "paper":
