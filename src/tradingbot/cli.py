@@ -59,7 +59,9 @@ def cmd_select(args, cfg):
         else:
             selection[m["symbol"]] = latest["strategy"]
     from tradingbot.bot import SELECTION_FILE
-    total = summarize(all_trades)
+    from tradingbot.learning.selector import equity_curve
+    all_trades.sort(key=lambda t: t.exit_time)
+    total = summarize(all_trades, equity_curve(all_trades, cfg.start_capital * max(len(cfg.markets), 1)))
     print(f"\n== Alle Maerkte zusammen (Out-of-Sample) ==\n  {_fmt(total)}")
     SELECTION_FILE.write_text(json.dumps({"timeframe": cfg.timeframe, "exit_mode": cfg.risk.exit_mode,
                                           "strategies": selection}, indent=2))
