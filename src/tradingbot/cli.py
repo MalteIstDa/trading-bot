@@ -17,10 +17,6 @@ def _data(args, cfg, symbol):
     return synthetic() if args.synthetic else load_history(symbol, cfg.timeframe, cfg.history_period)
 
 
-def _apply_timeframe(args, cfg):
-    if getattr(args, "timeframe", None):
-        cfg.timeframe = args.timeframe
-        cfg.history_period = max_period(args.timeframe)
 
 
 def _fmt(stats: dict) -> str:
@@ -68,7 +64,12 @@ def cmd_select(args, cfg):
 
 def cmd_paper(args, cfg):
     from tradingbot.bot import run_paper
-    run_paper(cfg, args.poll)
+    strategies = None
+    if args.strategy:
+        symbols = args.symbols or [m["symbol"] for m in cfg.markets]
+        strategies = {s: args.strategy for s in symbols}
+        print("TESTLAUF: Strategie manuell gewaehlt, sie hat die Pruefung nicht bestanden. Kein Gewinn zu erwarten.")
+    run_paper(cfg, args.poll, strategies)
 
 
 def main(argv=None):
@@ -80,11 +81,16 @@ def main(argv=None):
         sp.add_argument("--synthetic", action="store_true", help="Zufallsdaten statt echter Kurse")
         sp.add_argument("--timeframe", help="Kerzengroesse, z. B. 5m, 15m, 1h (1h = 2 Jahre Historie)")
     sp = sub.add_parser("paper")
-    sp.add_argument("--poll", type=int, default=300, help="Sekunden zwischen Abfragen")
+    sp.add_argument("--poll", type=int, default=60, help="Sekunden zwischen Abfragen")
+    sp.add_argument("--strategy", help='Testlauf mit fester Strategie, z. B. "breakout(lookback=20)"')
+    sp.add_argument("--symbols", nargs="+", help="Maerkte fuer den Testlauf, z. B. GC=F NQ=F")
+    sp.add_argument("--timeframe", help="Kerzengroesse, z. B. 5m oder 1h")
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = load_config(args.config)
-    _apply_timeframe(args, cfg)
+    if getattr(args, "timeframe", None):
+        cfg.timeframe = args.timeframe
+        cfg.history_period = max_period(args.timeframe)
     if args.cmd != "paper":
         print(f"Kerzen: {cfg.timeframe}, Historie: {cfg.history_period}")
     {"backtest": cmd_backtest, "select": cmd_select, "paper": cmd_paper}[args.cmd](args, cfg)

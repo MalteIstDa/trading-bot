@@ -6,7 +6,7 @@ Aktueller Stand: **Backtest und Paper Trading mit Spielgeld**. Echtes Geld ist a
 ## Was der Bot kann
 
 - **Marktdaten** kostenlos von Yahoo Finance (5-Minuten-Kerzen, Cache in `data/`).
-- **Strategiebibliothek**: EMA-Cross (Trend), Breakout (Ausbruch), RSI-Reversion, Ausbruch zur US-Eroeffnung (15:30 Uhr), VWAP-Trend, jeweils mit mehreren Parametern.
+- **Strategiebibliothek**: EMA-Cross (Trend), Breakout (Ausbruch), RSI-Reversion, Ausbruch zur US-Eroeffnung (15:30 Uhr), VWAP-Trend, Breakout nur in Trendphasen und RSI nur in Seitwaertsphasen (ADX-Marktphasen-Filter), jeweils mit mehreren Parametern.
 - **Automatische SL/TP**: Stop-Loss = 1,5 x ATR, Take-Profit = 3 x Stop-Abstand (**RR 1:3**). Gesetzt vom Risk Manager, nicht von der Strategie.
 - **Risk Manager**: max. 1 % Risiko pro Trade, max. 3 % Tagesverlust (danach Pause bis zum naechsten Tag), max. offene Positionen.
 - **Lernt aus Verlusttrades**: erkennt Uhrzeiten und Volatilitaetsphasen, in denen eine Strategie systematisch verliert, und sperrt sie.
@@ -35,6 +35,17 @@ tradingbot select --timeframe 15m # 15-Minuten-Kerzen, 60 Tage
 ```
 
 `tradingbot paper` nutzt automatisch dieselbe Kerzengroesse wie das letzte `select`.
+
+### Paper-Testlauf (Technik pruefen, ohne bestandene Strategie)
+
+```bash
+caffeinate -i tradingbot paper --strategy "trend_breakout(lookback=20, adx_min=25)" --symbols GC=F NQ=F --timeframe 5m
+```
+
+- `caffeinate -i` (nur Mac) verhindert den Ruhezustand, solange der Bot laeuft. Ladekabel dranlassen.
+- Kontostand und offene Positionen stehen in `data/paper_state.json` und bleiben nach einem Neustart erhalten.
+- Jeder geschlossene Trade landet in `data/paper_trades.csv`.
+- Beenden mit `Ctrl + C`. Komplett neu starten: `rm data/paper_state.json data/paper_trades.csv`.
 
 Damit der Laptop dauerhaft laeuft: Energiesparmodus und Ruhezustand ausschalten, Deckel-Schliessen auf "nichts tun" stellen,
 und `tradingbot paper` z. B. in `tmux` oder als systemd-Dienst starten.

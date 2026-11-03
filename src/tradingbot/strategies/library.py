@@ -5,7 +5,15 @@ import itertools
 
 import pandas as pd
 
-from tradingbot.strategies.base import Strategy, crossed
+from tradingbot.strategies.base import Strategy, adx, crossed
+
+
+def regime(sig: pd.Series, df: pd.DataFrame, adx_min: float = 0, adx_max: float = 100) -> pd.Series:
+    """Marktphasen-Filter: Signale nur, wenn die Trendstaerke (ADX) im erlaubten Bereich liegt."""
+    if adx_min <= 0 and adx_max >= 100:
+        return sig
+    a = adx(df)
+    return sig.where((a >= adx_min) & (a <= adx_max), 0)
 
 
 class EmaCross(Strategy):
@@ -106,7 +114,26 @@ class VwapTrend(Strategy):
         return sig
 
 
-STRATEGIES: list[type[Strategy]] = [EmaCross, Breakout, RsiReversion, OpeningRangeBreakout, VwapTrend]
+class TrendBreakout(Breakout):
+    """Breakout nur in Trendphasen (ADX hoch). Vermeidet Fehlausbrueche im Seitwaertsmarkt."""
+    name = "trend_breakout"
+    grid = {"lookback": [20, 50], "adx_min": [20, 25, 30]}
+
+    def signals(self, df: pd.DataFrame) -> pd.Series:
+        return regime(super().signals(df), df, adx_min=self.params["adx_min"])
+
+
+class RangeReversion(RsiReversion):
+    """RSI-Reversion nur in Seitwaertsphasen (ADX niedrig), wo Rueckkehr zur Mitte wahrscheinlicher ist."""
+    name = "range_reversion"
+    grid = {"period": [7, 14], "level": [20, 30], "adx_max": [15, 20]}
+
+    def signals(self, df: pd.DataFrame) -> pd.Series:
+        return regime(super().signals(df), df, adx_max=self.params["adx_max"])
+
+
+STRATEGIES: list[type[Strategy]] = [EmaCross, Breakout, RsiReversion, OpeningRangeBreakout, VwapTrend,
+                                    TrendBreakout, RangeReversion]
 
 
 def all_candidates() -> list[Strategy]:

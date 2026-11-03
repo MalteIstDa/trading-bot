@@ -34,3 +34,18 @@ def crossed(a: pd.Series, b: pd.Series) -> pd.Series:
     up = (a > b) & (a.shift(1) <= b.shift(1))
     down = (a < b) & (a.shift(1) >= b.shift(1))
     return up.astype(int) - down.astype(int)
+
+
+def adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """Trendstaerke (0-100). Ueber ~25 = Trendphase, unter ~20 = Seitwaertsphase."""
+    up = df["high"].diff()
+    down = -df["low"].diff()
+    plus_dm = up.where((up > down) & (up > 0), 0.0)
+    minus_dm = down.where((down > up) & (down > 0), 0.0)
+    tr = atr(df, 1)
+    a = 1 / period
+    atr_s = tr.ewm(alpha=a).mean()
+    plus_di = 100 * plus_dm.ewm(alpha=a).mean() / atr_s
+    minus_di = 100 * minus_dm.ewm(alpha=a).mean() / atr_s
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, float("nan"))
+    return dx.ewm(alpha=a).mean()
