@@ -17,6 +17,8 @@ class RiskConfig:
     sl_atr_mult: float = 1.5
     max_daily_loss_pct: float = 3.0
     max_open_positions: int = 2
+    exit_mode: str = "fixed"      # "fixed" = SL + TP mit RR 1:3, "trailing" = nachgezogener Stop, kein TP
+    trail_atr_mult: float = 3.0   # Abstand des Trailing Stops in ATR
 
 
 @dataclass

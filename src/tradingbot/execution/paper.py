@@ -45,15 +45,16 @@ class PaperBroker(Broker):
         plan = self.positions.get(symbol)
         if not plan:
             return []
-        hit_sl = low <= plan.stop_loss if plan.side > 0 else high >= plan.stop_loss
-        hit_tp = high >= plan.take_profit if plan.side > 0 else low <= plan.take_profit
-        if not (hit_sl or hit_tp):
+        res = plan.check_exit(high, low)
+        if not res:
+            plan.trail(high, low)
+            self.save()
             return []
-        exit_px = plan.stop_loss if hit_sl else plan.take_profit  # beides in einer Kerze: konservativ SL
+        reason, exit_px = res
         pnl = (exit_px - plan.entry) * plan.side * plan.contracts * self.point_values.get(symbol, 1.0) - 2 * self.fee
         self._equity += pnl
         del self.positions[symbol]
         self.save()
         return [{"symbol": symbol, "side": plan.side, "entry": plan.entry, "exit": exit_px,
                  "stop_loss": plan.stop_loss, "take_profit": plan.take_profit, "contracts": plan.contracts,
-                 "reason": "sl" if hit_sl else "tp", "pnl": round(pnl, 2), "equity": round(self._equity, 2)}]
+                 "reason": reason, "pnl": round(pnl, 2), "equity": round(self._equity, 2)}]

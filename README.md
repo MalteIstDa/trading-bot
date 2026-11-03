@@ -32,7 +32,13 @@ tradingbot paper            # Paper Trading starten (prueft alle 5 Minuten)
 tradingbot backtest --synthetic   # ohne Internet, mit Zufallsdaten
 tradingbot select --timeframe 1h  # 1-Stunden-Kerzen, 2 Jahre Historie (aussagekraeftiger)
 tradingbot select --timeframe 15m # 15-Minuten-Kerzen, 60 Tage
+tradingbot select --timeframe 1d --exit trailing   # Trendfolge: Tageskerzen, nachgezogener Stop, kein festes TP
 ```
+
+**Ausstiegs-Modi** (`--exit`):
+- `fixed` (Standard): SL = 1,5 x ATR, TP = 3 x SL (RR 1:3).
+- `trailing`: Stop startet bei 3 x ATR und wird mit dem Kurs nachgezogen, kein festes Ziel. Klassische Trendfolge:
+  wenige grosse Gewinner, viele kleine Verluste.
 
 `tradingbot paper` nutzt automatisch dieselbe Kerzengroesse wie das letzte `select`.
 

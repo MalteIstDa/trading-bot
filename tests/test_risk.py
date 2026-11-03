@@ -29,3 +29,23 @@ def test_daily_loss_kill_switch():
     assert rm.halted and rm.plan(1, 100, 2, 9_600, 10, 0) is None
     rm.new_bar(date(2026, 1, 2), 9_600)
     assert not rm.halted
+
+
+def test_trailing_stop_follows_price_and_locks_profit():
+    rm = RiskManager(RiskConfig(exit_mode="trailing", trail_atr_mult=2))
+    plan = rm.plan(1, 100, 1, 10_000, 10, 0)
+    assert plan.stop_loss == 98 and plan.take_profit == float("inf")
+    assert plan.check_exit(high=101, low=99) is None
+    plan.trail(high=110, low=105)       # Kurs steigt -> Stop auf 108
+    assert plan.stop_loss == 108
+    plan.trail(high=104, low=103)       # Kurs faellt -> Stop bleibt
+    assert plan.stop_loss == 108
+    assert plan.check_exit(high=109, low=107) == ("trail", 108)
+
+
+def test_trailing_short():
+    rm = RiskManager(RiskConfig(exit_mode="trailing", trail_atr_mult=2))
+    plan = rm.plan(-1, 100, 1, 10_000, 10, 0)
+    plan.trail(high=95, low=90)
+    assert plan.stop_loss == 92
+    assert plan.check_exit(high=93, low=91) == ("trail", 92)

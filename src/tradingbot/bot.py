@@ -47,6 +47,7 @@ def run_paper(cfg: Config, poll_seconds: int = 60, strategies: dict[str, str] | 
         saved = load_selection()
         strategies = saved.get("strategies", {})
         cfg.timeframe = saved.get("timeframe", cfg.timeframe)
+        cfg.risk.exit_mode = saved.get("exit_mode", cfg.risk.exit_mode)
     if not strategies:
         raise SystemExit("Keine Strategie ausgewaehlt. Entweder `tradingbot select` ausfuehren oder "
                          "`tradingbot paper --strategy \"breakout(lookback=20)\"` als Testlauf.")
@@ -59,7 +60,8 @@ def run_paper(cfg: Config, poll_seconds: int = 60, strategies: dict[str, str] | 
     rm = RiskManager(cfg.risk)
     last_bar: dict[str, object] = {}
     period = "5d" if cfg.timeframe in ("1m", "2m", "5m") else "60d"
-    log.info("Paper Trading (%s-Kerzen) mit %s | Konto: %.2f", cfg.timeframe, strategies, broker.equity())
+    log.info("Paper Trading (%s-Kerzen, Ausstieg %s) mit %s | Konto: %.2f", cfg.timeframe, cfg.risk.exit_mode,
+             strategies, broker.equity())
 
     while True:
         for symbol, strat_name in strategies.items():

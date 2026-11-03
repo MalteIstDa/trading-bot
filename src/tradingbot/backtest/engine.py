@@ -25,7 +25,7 @@ class Trade:
     contracts: int
     pnl: float
     r_multiple: float     # Ergebnis in Vielfachen des Risikos (Verlust = -1R, Ziel = +3R)
-    reason: str           # "tp", "sl" oder "end"
+    reason: str           # "tp", "sl", "trail" oder "end"
     hour: int
     atr_pct: float        # Volatilitaet beim Einstieg
 
@@ -65,19 +65,19 @@ def run_backtest(df: pd.DataFrame, strategy: Strategy, cfg: Config, symbol: str 
         # 2) SL/TP pruefen (trifft beides in einer Bar: konservativ SL annehmen)
         if pos is not None:
             plan, ei, atr_pct = pos
-            hit_sl = l[i] <= plan.stop_loss if plan.side > 0 else h[i] >= plan.stop_loss
-            hit_tp = h[i] >= plan.take_profit if plan.side > 0 else l[i] <= plan.take_profit
+            res = plan.check_exit(h[i], l[i])
             last = i == len(df) - 1
-            if hit_sl or hit_tp or last:
-                reason = "sl" if hit_sl else ("tp" if hit_tp else "end")
-                exit_px = plan.stop_loss if hit_sl else (plan.take_profit if hit_tp else c[i])
+            if res or last:
+                reason, exit_px = res if res else ("end", c[i])
                 exit_px -= plan.side * slip
                 pnl = (exit_px - plan.entry) * plan.side * plan.contracts * point_value - 2 * cfg.fee_per_trade
-                risk_money = abs(plan.entry - plan.stop_loss) * plan.contracts * point_value
+                risk_money = plan.initial_risk * plan.contracts * point_value
                 equity += pnl
                 trades.append(Trade(symbol, repr(strategy), plan.side, idx[ei], idx[i], plan.entry, exit_px,
-                                    plan.stop_loss, plan.take_profit, plan.contracts, pnl,
+                                    plan.entry - plan.side * plan.initial_risk, plan.take_profit, plan.contracts, pnl,
                                     pnl / risk_money if risk_money else 0.0, reason, idx[ei].hour, atr_pct))
                 pos = None
+            else:
+                plan.trail(h[i], l[i])
         curve.append(equity)
     return trades, pd.Series(curve, index=idx[1:])
