@@ -16,7 +16,7 @@ def load_history(symbol: str, interval: str = "5m", period: str = "60d", use_cac
     """OHLCV-Daten laden. Gibt DataFrame mit Spalten open/high/low/close/volume zurueck."""
     cache_file = CACHE / f"{symbol.replace('=', '_')}_{interval}_{period}.csv"
     if use_cache and cache_file.exists():
-        return pd.read_csv(cache_file, index_col=0, parse_dates=True)
+        return read_csv(cache_file)
 
     import yfinance as yf
 
@@ -26,8 +26,22 @@ def load_history(symbol: str, interval: str = "5m", period: str = "60d", use_cac
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     df = df.rename(columns=str.lower)[COLUMNS].dropna()
+    df.index = _to_utc(df.index)
     CACHE.mkdir(exist_ok=True)
     df.to_csv(cache_file)
+    return df
+
+
+def _to_utc(index) -> pd.DatetimeIndex:
+    """Zeitstempel einheitlich in UTC. Noetig, weil Yahoo bei der Sommer-/Winterzeit-Umstellung
+    gemischte Zeitzonen-Offsets liefert und die CSV sonst als Text eingelesen wird."""
+    idx = pd.to_datetime(index, utc=True)
+    return pd.DatetimeIndex(idx)
+
+
+def read_csv(path) -> pd.DataFrame:
+    df = pd.read_csv(path, index_col=0)
+    df.index = _to_utc(df.index)
     return df
 
 
