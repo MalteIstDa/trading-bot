@@ -87,13 +87,19 @@ def scan(cfg: Config, days: int = 30, top: int = 40, keep: int = 5) -> list[dict
 
 
 def test(cfg: Config, train_days: int = 30, test_days: int = 10, windows: int = 5, top: int = 40,
-         keep: int = 5, interval: str = "15m", delay_s: int = 60) -> dict:
+         keep: int = 5, interval: str = "15m", delay_s: int = 60, min_t: float = 1.5) -> dict:
     """Walk-Forward: Trader nur mit vergangenen Daten auswaehlen, ihre Trades danach mit Verzoegerung kopieren."""
     end = _now_ms()
     test_start = end - windows * test_days * DAY_MS
     start = test_start - train_days * DAY_MS
     cands = _candidates("account_value", top)
     fills = _load_fills(cands, start, end)
+    if not fills:
+        raise SystemExit("Keine Trade-Daten geladen. Bitte die Ausgabe oben pruefen.")
+    total_fills = sum(len(f) for f in fills.values())
+    first = min((f[0]["time"] for f in fills.values() if f), default=end)
+    print(f"Geladen: {len(fills)} Konten, {total_fills} Fills, aeltester Fill vom "
+          f"{pd.to_datetime(first, unit='ms'):%Y-%m-%d} (benoetigt ab {pd.to_datetime(start, unit='ms'):%Y-%m-%d})")
     closes = {a: close_times(f) for a, f in fills.items()}
     candle_cache: dict[str, pd.DataFrame] = {}
 
@@ -114,7 +120,12 @@ def test(cfg: Config, train_days: int = 30, test_days: int = 10, windows: int = 
         te_end = te_start + test_days * DAY_MS
         scores = sorted((score_trader(a, f, tr_start, te_start) for a, f in fills.items()),
                         key=lambda s: s.score, reverse=True)
-        chosen = [s for s in scores if s.t_stat >= 2 and s.opens_per_day >= 0.2][:keep]
+        chosen = [s for s in scores if s.t_stat >= min_t and s.opens_per_day >= 0.2][:keep]
+        if not chosen and scores:  # Diagnose: warum niemand bestanden hat
+            best = scores[:3]
+            print(f"  Fenster {w + 1}: niemand erfuellt t-Wert >= {min_t} und >= 0,2 Eroeffnungen/Tag. Beste: " +
+                  ", ".join(f"{_short(x.address)} t={x.t_stat:.2f} Eroeffn./Tag={x.opens_per_day:.2f} "
+                            f"Gewinn={x.pnl:,.0f}$" for x in best))
         w_trades, w_own = [], 0.0
         for s in chosen:
             sig = open_signals(fills[s.address], te_start, te_end)

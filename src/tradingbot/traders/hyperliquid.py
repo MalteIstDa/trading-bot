@@ -83,24 +83,32 @@ def fills(address: str, start_ms: int, end_ms: int | None = None, cache_dir: Pat
         c = json.loads(cache.read_text())
         if c["start"] <= start_ms and c["end"] >= end_ms - 6 * 3600 * 1000:  # hoechstens 6 h alt
             return [f for f in c["fills"] if start_ms <= f["time"] <= end_ms]
-    out, cursor = [], start_ms
-    while cursor < end_ms and len(out) < MAX_FILLS:
-        page = post({"type": "userFillsByTime", "user": address, "startTime": cursor,
-                     "endTime": end_ms, "aggregateByTime": True})
+    out: list[dict] = []
+    # Die API liefert pro Anfrage nur einen Teil (500-2000 Fills). Ob das die aeltesten oder die neuesten
+    # im Zeitraum sind, ist nicht eindeutig dokumentiert, darum werden beide Luecken nachgeladen.
+    todo = [(start_ms, end_ms)]
+    while todo and len(out) < MAX_FILLS:
+        lo, hi = todo.pop()
+        if lo > hi:
+            continue
+        page = post({"type": "userFillsByTime", "user": address, "startTime": lo,
+                     "endTime": hi, "aggregateByTime": True}) or []
         if not page:
-            break
-        page = sorted(page, key=lambda f: f["time"])
+            continue
         out += page
-        nxt = page[-1]["time"] + 1
-        if nxt <= cursor or len(page) < 500:
-            break
-        cursor = nxt
+        if len(page) < 500:  # kleine Antwort = Zeitraum vollstaendig
+            continue
+        times = [f["time"] for f in page]
+        todo.append((lo, min(times) - 1))   # aeltere Luecke
+        todo.append((max(times) + 1, hi))   # neuere Luecke
+        time.sleep(0.2)
     seen, uniq = set(), []
     for f in out:
         key = (f.get("tid"), f.get("hash"), f["time"], f.get("oid"))
         if key not in seen:
             seen.add(key)
             uniq.append(f)
+    uniq.sort(key=lambda f: f["time"])
     if cache:
         cache.parent.mkdir(parents=True, exist_ok=True)
         cache.write_text(json.dumps({"start": start_ms, "end": end_ms, "fills": uniq}))

@@ -125,3 +125,17 @@ def test_watch_copies_and_follows_exit(monkeypatch, tmp_path):
     rows = (tmp_path / "t.csv").read_text().splitlines()
     assert len(rows) == 2 and "trader_exit" in rows[1]
     assert json.loads((tmp_path / "d.json").read_text())["equity"] > 0
+
+
+@pytest.mark.parametrize("newest_first", [True, False])
+def test_fills_pagination_both_directions(monkeypatch, newest_first):
+    all_fills = [fill(T0 + i * 1000, "BTC", "B", 1, 0, 100) for i in range(1700)]
+
+    def fake_post(payload):
+        sel = [f for f in all_fills if payload["startTime"] <= f["time"] <= payload["endTime"]]
+        return sel[-500:] if newest_first else sel[:500]
+
+    monkeypatch.setattr(hl, "post", fake_post)
+    monkeypatch.setattr(hl.time, "sleep", lambda s: None)
+    got = hl.fills("0xabc", T0, T0 + 2_000_000)
+    assert len(got) == 1700 and got[0]["time"] == T0

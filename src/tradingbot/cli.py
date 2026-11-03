@@ -89,7 +89,7 @@ def cmd_traders(args, cfg):
         runner.scan(cfg, days=args.days, top=args.top, keep=args.keep)
     elif args.action == "test":
         runner.test(cfg, train_days=args.days, test_days=args.test_days, windows=args.windows,
-                    top=args.top, keep=args.keep, delay_s=args.delay)
+                    top=args.top, keep=args.keep, delay_s=args.delay, min_t=args.min_t)
     else:
         runner.watch(cfg, poll_seconds=args.poll)
 
@@ -125,6 +125,7 @@ def main(argv=None):
     sp.add_argument("--keep", type=int, default=5, help="Anzahl Trader, die kopiert werden")
     sp.add_argument("--delay", type=int, default=60, help="test: Sekunden Verzoegerung beim Kopieren")
     sp.add_argument("--poll", type=int, default=60, help="watch: Sekunden zwischen Abfragen")
+    sp.add_argument("--min-t", type=float, default=1.5, help="test: Mindest-t-Wert fuer die Auswahl")
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = load_config(getattr(args, "config", None))
