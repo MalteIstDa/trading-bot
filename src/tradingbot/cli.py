@@ -94,6 +94,17 @@ def cmd_traders(args, cfg):
         runner.watch(cfg, poll_seconds=args.poll, rescan_hours=args.rescan_hours)
 
 
+def cmd_learn(args, cfg):
+    from tradingbot import bot
+    from tradingbot.learning import research
+    every = args.every
+    print(f"Lernschleife: Familie {args.family}, {len(research.candidates(args.family))} Strategien, "
+          f"{len(cfg.markets)} Maerkte, {cfg.timeframe}-Kerzen, alle {every:g} h eine neue Runde. "
+          f"Daten/Ergebnisse in {bot.DATA}")
+    research.run(cfg, args.family, bot.DATA, every_hours=every, rounds=args.rounds, folds=args.folds,
+                 min_trades=args.min_trades or 20)
+
+
 def cmd_status(args, cfg):
     """Kurzer Ueberblick im Terminal: Konto, offene Positionen, letzte Trades und Ereignisse."""
     import csv
@@ -149,6 +160,14 @@ def main(argv=None):
     sp = sub.add_parser("dashboard", help="Live-Dashboard im Browser")
     sp.add_argument("--port", type=int, default=8050)
     sp.add_argument("--no-browser", action="store_true")
+    sp = sub.add_parser("learn", parents=[common], help="Dauer-Lernschleife: Strategien immer wieder ehrlich testen")
+    sp.add_argument("--family", choices=["ict", "momentum", "all"], default="ict",
+                    help="ict = ICT/TJR-Scalping (Futures), momentum = Momentum/Volumen/RSI (Krypto)")
+    sp.add_argument("--every", type=float, default=6, help="Stunden zwischen zwei Lernrunden")
+    sp.add_argument("--rounds", type=int, help="Anzahl Runden (Standard: endlos)")
+    sp.add_argument("--folds", type=int, default=4, help="Anzahl Testabschnitte im Walk-Forward")
+    sp.add_argument("--min-trades", type=int, help="Mindest-Trades im Auswahlzeitraum (Standard 20)")
+    sp.add_argument("--timeframe", help="Kerzengroesse, z. B. 5m oder 1h")
     sub.add_parser("status", parents=[common], help="Kontostand, offene Positionen und letzte Trades anzeigen")
     sp = sub.add_parser("traders", parents=[common], help="Top-Trader auf Hyperliquid analysieren und kopieren")
     sp.add_argument("action", choices=["scan", "test", "watch"],
@@ -177,7 +196,8 @@ def main(argv=None):
     if args.cmd in ("backtest", "select"):
         print(f"Kerzen: {cfg.timeframe}, Historie: {cfg.history_period}, Ausstieg: {cfg.risk.exit_mode}")
     {"backtest": cmd_backtest, "select": cmd_select, "paper": cmd_paper,
-     "dashboard": cmd_dashboard, "traders": cmd_traders, "status": cmd_status}[args.cmd](args, cfg)
+     "dashboard": cmd_dashboard, "traders": cmd_traders, "status": cmd_status,
+     "learn": cmd_learn}[args.cmd](args, cfg)
 
 
 if __name__ == "__main__":

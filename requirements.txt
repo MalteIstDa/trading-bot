@@ -4,3 +4,4 @@ pyyaml>=6.0
 yfinance>=0.2.40
 pytest>=8.0
 certifi
+websocket-client>=1.6

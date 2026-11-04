@@ -70,7 +70,7 @@ def current_bot() -> str | None:
 def available_bots() -> list[dict]:
     current = current_bot()
     return [{"id": k, "label": label} for k, (label, path) in BOTS.items()
-            if k == current or (path / bot.DASHBOARD_JSON.name).exists()]
+            if k == current or k in control.COMMANDS or (path / bot.DASHBOARD_JSON.name).exists()]
 
 
 def _test_by_trader(rows: list[dict]) -> dict[str, dict]:
@@ -131,6 +131,14 @@ def build_state(name: str | None = None) -> dict:
     state["bot"] = name if name in BOTS else current_bot()
     state["control"] = control.status(state["bot"] or "")
     state["activity"] = _read_json(data / "traders" / "status.json")
+    state["live"] = _read_json(data / "traders" / "live.json")
+    research = _read_json(data / "research" / "latest.json")
+    learn_status = _read_json(data / "research" / "status.json")
+    if research or learn_status:
+        state["research"] = {"result": research, "status": learn_status}
+        if state["bot"] != "copy":
+            state["activity"] = learn_status
+    state["control"]["label"] = control.LABELS.get(state["bot"] or "", "Bot")
     return state
 
 

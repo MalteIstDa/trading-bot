@@ -262,6 +262,41 @@ def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m", rescan_hou
     was_halted = False
     loop = 0
 
+    live = hl.LiveFeed([t["address"] for t in selection]).start() if hl.LiveFeed.available() else None
+    if live is None:
+        log.warning("Paket websocket-client fehlt: nur Abfrage alle %ss (pip install websocket-client)", poll_seconds)
+    live_prices: dict[str, float] = {}
+
+    def close_label(closed):
+        label = {"tp": "Ziel (TP) erreicht", "sl": "Stop (SL) ausgeloest", "trail": "Trailing Stop"}
+        return (f"{closed['symbol']}: {label.get(closed['reason'], closed['reason'])} | {closed['pnl']:+.2f} $ "
+                f"({closed['r_multiple']:+.2f}R) | Konto {closed['equity']:.2f} $")
+
+    def on_live_prices():
+        """Jeder Preis-Tick: offene Positionen sofort gegen SL/TP pruefen (Preis = Mitte zwischen Kauf/Verkauf)."""
+        for coin in list(broker.open_positions()):
+            px = live.mids.get(coin)
+            if px is None:
+                continue
+            live_prices[coin] = px
+            for closed in broker.on_price(coin, px, px, px):
+                bot._log_trade({**closed, "trader": owner.get(coin, {}).get("trader", ""),
+                                "opened": owner.get(coin, {}).get("opened", "")})
+                _event("close", close_label(closed) + " (live)")
+
+    def write_live():
+        if live is None:
+            return
+        opened = broker.open_positions()
+        unreal = sum((live.mids.get(c, p.entry) - p.entry) * p.side * p.contracts for c, p in opened.items())
+        row = {"updated": pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds"), "connected": live.connected,
+               "error": live.error, "equity": broker.equity(), "unrealized": unreal,
+               "prices": {c: live.mids.get(c) for c in list(opened) + list(watch_frames) if c in live.mids}}
+        f = _dir() / "live.json"
+        tmp = f.with_suffix(".tmp")
+        tmp.write_text(json.dumps(row))
+        tmp.replace(f)
+
     def candles_15m(coin):
         df = hl.candles(coin, interval, _now_ms() - 3 * DAY_MS)
         frames[coin] = df
@@ -290,6 +325,8 @@ def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m", rescan_hou
                 fresh = scan(cfg)
                 if fresh:
                     selection = fresh
+                    if live:
+                        live.set_users([t["address"] for t in selection])
                 _event("scan", f"Trader neu ausgewaehlt: {', '.join(_short(t['address']) for t in selection)}")
             except Exception as e:
                 log.warning("Neuauswahl fehlgeschlagen, behalte bisherige Trader: %s", e)
@@ -390,9 +427,7 @@ def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m", rescan_hou
                 checked[coin] = int(ts) + 60_000
                 for closed in broker.on_price(coin, bar.high, bar.low, bar.close):
                     bot._log_trade({**closed, "trader": owner.get(coin, {}).get("trader", ""), "opened": owner.get(coin, {}).get("opened", "")})
-                    label = {"tp": "Ziel (TP) erreicht", "sl": "Stop (SL) ausgeloest", "trail": "Trailing Stop"}
-                    _event("close", f"{coin}: {label.get(closed['reason'], closed['reason'])} | {closed['pnl']:+.2f} $ "
-                                    f"({closed['r_multiple']:+.2f}R) | Konto {closed['equity']:.2f} $")
+                    _event("close", close_label(closed))
         # Watchlist fuer die Charts: was die kopierten Trader gerade halten (alle 5 Runden aktualisiert)
         held = {}
         for t in [x["address"] for x in selection]:
@@ -423,8 +458,35 @@ def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m", rescan_hou
         except Exception as e:
             log.warning("Dashboard: %s", e)
         nxt = pd.Timestamp.now(tz="UTC") + pd.Timedelta(seconds=poll_seconds)
-        _status("Wartet auf die nächste Runde", loop=loop, equity=broker.equity(), open=list(broker.open_positions()),
+        mode = ("live verbunden: reagiert sofort auf Trades der Trader" if live and live.connected else
+                "Live-Verbindung wird aufgebaut" if live else "nur Abfrage")
+        _status("Wartet auf die nächste Runde" if not (live and live.connected) else "Live: wartet auf Trades der Trader",
+                loop=loop, equity=broker.equity(), open=list(broker.open_positions()),
                 checks=checks, next_round=nxt.isoformat(timespec="seconds"), poll_seconds=poll_seconds,
-                halted=rm.halted, traders=len(traders))
-        if max_loops is None or loop < max_loops:
+                halted=rm.halted, traders=len(traders), live=mode)
+        if max_loops is not None and loop >= max_loops:
+            break
+        if live is None:
             time.sleep(poll_seconds)
+            continue
+        # Live warten: Preis-Ticks pruefen SL/TP sofort; ein Fill eines Traders startet sofort eine neue Runde.
+        deadline, earliest = time.time() + poll_seconds, time.time() + 3
+        last_write = 0.0
+        import queue as _q
+        while time.time() < deadline:
+            try:
+                ev = live.events.get(timeout=max(0.1, min(1.0, deadline - time.time())))
+            except _q.Empty:
+                ev = None
+            if ev and ev[0] == "mids":
+                on_live_prices()
+            elif ev and ev[0] == "fill":
+                log.info("Live: %s hat gerade gehandelt (%s)", _short(ev[1] or "?"), ", ".join(ev[2][:3]))
+                while time.time() < earliest:  # nicht oefter als alle 3 s eine volle Runde
+                    time.sleep(0.2)
+                break
+            if time.time() - last_write > 2:
+                write_live()
+                last_write = time.time()
+    if live:
+        live.stop()

@@ -190,3 +190,13 @@ def test_notify_is_silent_without_settings(monkeypatch, tmp_path):
     assert not notify.enabled() and notify.send("hallo") is False
     (tmp_path / ".env").write_text("TELEGRAM_TOKEN=abc\nTELEGRAM_CHAT_ID='42'\n")
     assert notify._settings() == ("abc", "42")
+
+
+def test_live_feed_handles_prices_and_fills():
+    feed = hl.LiveFeed(["0xabc"])
+    feed._handle({"channel": "allMids", "data": {"mids": {"BTC": "100000.5"}}})
+    assert feed.mids["BTC"] == 100000.5 and feed.events.get_nowait() == ("mids", None)
+    feed._handle({"channel": "userFills", "data": {"isSnapshot": True, "user": "0xabc", "fills": [{"coin": "ETH"}]}})
+    assert feed.events.empty()  # alte Fills beim Verbinden ignorieren
+    feed._handle({"channel": "userFills", "data": {"user": "0xabc", "fills": [{"coin": "ETH"}]}})
+    assert feed.events.get_nowait() == ("fill", "0xabc", ["ETH"])

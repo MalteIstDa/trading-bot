@@ -2,10 +2,10 @@
 mode: paper            # paper | live  (live ist absichtlich noch nicht implementiert)
 
 markets:               # Yahoo-Finance-Symbole (kostenlos, fuer Backtest und Paper Trading)
-  - {symbol: "GC=F", name: "Gold",        point_value: 10.0}   # Micro Gold (MGC) = 10 USD pro Punkt
-  - {symbol: "SI=F", name: "Silber",      point_value: 1000.0} # Micro Silver (SIL) = 1000 USD pro 1 USD
-  - {symbol: "NQ=F", name: "Nasdaq 100",  point_value: 2.0}    # Micro NQ (MNQ) = 2 USD pro Punkt
-  - {symbol: "ES=F", name: "S&P 500",     point_value: 5.0}    # Micro ES (MES) = 5 USD pro Punkt
+  - {symbol: "GC=F", name: "Gold",        point_value: 10.0, tick: 0.1}   # Micro Gold (MGC) = 10 USD pro Punkt
+  - {symbol: "SI=F", name: "Silber",      point_value: 1000.0, tick: 0.005} # Micro Silver (SIL) = 1000 USD pro 1 USD
+  - {symbol: "NQ=F", name: "Nasdaq 100",  point_value: 2.0, tick: 0.25}    # Micro NQ (MNQ) = 2 USD pro Punkt
+  - {symbol: "ES=F", name: "S&P 500",     point_value: 5.0, tick: 0.25}    # Micro ES (MES) = 5 USD pro Punkt
 
 timeframe: "5m"        # schnelles Trading; Yahoo liefert 5m-Daten nur fuer die letzten 60 Tage
 history_period: "60d"

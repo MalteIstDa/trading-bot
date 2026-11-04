@@ -57,6 +57,9 @@ kann also gleichzeitig mit dem Futures-Testlauf laufen.
 
 ### Top-Trader kopieren (Hyperliquid, nur Paper Trading)
 
+Der Copy-Bot haelt eine Dauerverbindung (WebSocket) zu Hyperliquid: Trades der Trader loesen sofort eine Runde aus,
+und jeder Preis-Tick prueft Stop und Ziel. Ohne das Paket `websocket-client` faellt er auf eine Abfrage pro Minute zurueck.
+
 Auf Hyperliquid sind Positionen und Trades aller Konten oeffentlich. Der Bot nutzt das so:
 
 ```bash
@@ -80,6 +83,21 @@ Auf Hyperliquid sind Positionen und Trades aller Konten oeffentlich. Der Bot nut
   und im Dashboard.
 - **Grenzen:** Das Leaderboard zeigt nur heute existierende Konten (Survivorship Bias). Hyperliquid hat eine
   Mindestorder von 10 $. Mit 20 $ geht das nur mit Hebel; der Paper-Bot ueberspringt kleinere Orders.
+
+### Dauer-Lernschleife (Futures: ICT/TJR, Krypto: Momentum/Volumen/RSI)
+
+Der Bot laedt alle paar Stunden neue Kerzen, haengt sie an ein wachsendes Archiv (`data/<bot>/archive/`) an und
+testet alle Strategie-Varianten neu, nur auf Daten, die er vorher nicht gesehen hat (Walk-Forward), und gegen
+Zufalls-Einstiege. Eine Strategie gilt erst als bestanden, wenn sie mindestens 30 Trades mit Gewinn macht und den
+Zufall in 90 % der Laeufe schlaegt. Echtes Geld handelt die Schleife nie.
+
+```bash
+tradingbot learn --family ict                                          # Futures (Gold, Silber, NQ, ES; 5m)
+tradingbot learn --family momentum --config config/crypto-learn.yaml   # Krypto (9 Coins, 1h, 1000 $ Spielgeld)
+```
+
+Im Dashboard (und in der Mac-App) laufen beide auch ueber den Start-Knopf in den Reitern Futures/Krypto;
+die Ergebnisse stehen im Reiter **Lernen**.
 
 ### Mac-App mit Start/Pause-Knopf
 

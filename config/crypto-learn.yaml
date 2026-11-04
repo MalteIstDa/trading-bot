@@ -1,0 +1,40 @@
+# Krypto-Lernschleife: tradingbot learn --config config/crypto-learn.yaml --family momentum
+# Testkonto 1000 $ (nur Spielgeld), damit auch kleine Coins sauber in Stueckzahlen aufgehen.
+mode: paper
+
+markets:               # Yahoo-Finance-Symbole, Preise in USD
+  - {symbol: "BTC-USD",  name: "Bitcoin",   point_value: 1.0, lot_step: 0.00001}
+  - {symbol: "ETH-USD",  name: "Ethereum",  point_value: 1.0, lot_step: 0.0001}
+  - {symbol: "SOL-USD",  name: "Solana",    point_value: 1.0, lot_step: 0.01}
+  - {symbol: "BNB-USD",  name: "BNB",       point_value: 1.0, lot_step: 0.001}
+  - {symbol: "XRP-USD",  name: "XRP",       point_value: 1.0, lot_step: 0.1}
+  - {symbol: "DOGE-USD", name: "Dogecoin",  point_value: 1.0, lot_step: 1.0}
+  - {symbol: "ADA-USD",  name: "Cardano",   point_value: 1.0, lot_step: 1.0}
+  - {symbol: "AVAX-USD", name: "Avalanche", point_value: 1.0, lot_step: 0.01}
+  - {symbol: "LINK-USD", name: "Chainlink", point_value: 1.0, lot_step: 0.01}
+
+timeframe: "1h"
+history_period: "730d"
+
+account:
+  start_capital: 1000.0
+  fee_per_trade: 0.0
+  fee_pct: 0.1             # 0,1 % pro Kauf und pro Verkauf
+  slippage_ticks: 0
+
+risk:
+  risk_per_trade_pct: 1.0
+  reward_risk: 3.0
+  atr_period: 14
+  sl_atr_mult: 1.5
+  max_daily_loss_pct: 5.0
+  max_open_positions: 3
+  exit_mode: fixed
+  trail_atr_mult: 3.0
+
+selection:
+  train_bars: 2000
+  test_bars: 500
+  min_trades: 30
+  min_profit_factor: 1.2
+  min_win_rate: 0.0

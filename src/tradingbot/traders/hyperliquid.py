@@ -152,3 +152,101 @@ def size_decimals() -> dict[str, int]:
     """Wie viele Nachkommastellen eine Ordergroesse je Coin haben darf."""
     meta = post({"type": "meta"})
     return {a["name"]: int(a.get("szDecimals", 3)) for a in meta.get("universe", [])}
+
+
+# ---------- Live-Verbindung (WebSocket) ----------
+
+WS_URL = "wss://api.hyperliquid.xyz/ws"
+
+
+class LiveFeed:
+    """Dauerverbindung zu Hyperliquid: meldet sofort, wenn ein beobachteter Trader handelt (userFills),
+    und liefert laufend die aktuellen Preise aller Coins (allMids). Faellt die Verbindung aus, wird sie
+    automatisch neu aufgebaut; der Bot prueft ausserdem weiter regelmaessig per Abfrage (Sicherheitsnetz).
+    Braucht das Paket `websocket-client`. Fehlt es, laeuft der Bot wie bisher nur mit Abfragen."""
+
+    def __init__(self, users: list[str]):
+        import queue
+        import threading
+        self.users = list(users)
+        self.events: "queue.Queue[tuple]" = queue.Queue()
+        self.mids: dict[str, float] = {}
+        self.mids_time = 0.0
+        self.connected = False
+        self.error = ""
+        self._stop = threading.Event()
+        self._ws = None
+        self._thread = threading.Thread(target=self._run, daemon=True, name="hyperliquid-ws")
+
+    @staticmethod
+    def available() -> bool:
+        try:
+            import websocket  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
+    def start(self) -> "LiveFeed":
+        self._thread.start()
+        return self
+
+    def stop(self) -> None:
+        self._stop.set()
+        try:
+            if self._ws:
+                self._ws.close()
+        except Exception:
+            pass
+
+    def set_users(self, users: list[str]) -> None:
+        """Neue Trader-Liste (nach Neuauswahl): Verbindung neu aufbauen."""
+        if sorted(users) != sorted(self.users):
+            self.users = list(users)
+            try:
+                if self._ws:
+                    self._ws.close()  # _run baut mit der neuen Liste neu auf
+            except Exception:
+                pass
+
+    def _run(self) -> None:
+        import websocket
+        delay = 2
+        while not self._stop.is_set():
+            try:
+                ws = websocket.create_connection(WS_URL, timeout=30, sslopt={"context": _SSL})
+                self._ws = ws
+                ws.send(json.dumps({"method": "subscribe", "subscription": {"type": "allMids"}}))
+                for u in self.users:
+                    ws.send(json.dumps({"method": "subscribe", "subscription": {"type": "userFills", "user": u}}))
+                self.connected, self.error, delay = True, "", 2
+                last_ping = time.time()
+                ws.settimeout(20)
+                while not self._stop.is_set():
+                    if time.time() - last_ping > 30:  # Hyperliquid trennt nach 60 s ohne Nachricht
+                        ws.send(json.dumps({"method": "ping"}))
+                        last_ping = time.time()
+                    try:
+                        raw = ws.recv()
+                    except websocket.WebSocketTimeoutException:
+                        continue
+                    if not raw:
+                        break
+                    self._handle(json.loads(raw))
+            except Exception as e:
+                self.error = str(e)
+            self.connected = False
+            if not self._stop.is_set():
+                time.sleep(delay)
+                delay = min(60, delay * 2)
+
+    def _handle(self, msg: dict) -> None:
+        ch, data = msg.get("channel"), msg.get("data") or {}
+        if ch == "allMids":
+            mids = data.get("mids") or {}
+            self.mids.update({k: float(v) for k, v in mids.items()})
+            self.mids_time = time.time()
+            self.events.put(("mids", None))
+        elif ch == "userFills" and not data.get("isSnapshot"):
+            fills = data.get("fills") or []
+            if fills:
+                self.events.put(("fill", data.get("user"), [f.get("coin") for f in fills]))

@@ -108,6 +108,7 @@
   <button data-tab="trades">Trades</button>
   <button data-tab="stats">Statistik</button>
   <button data-tab="copy" id="nav-copy">Copy-Trading</button>
+  <button data-tab="learn" id="nav-learn">Lernen</button>
 </nav>
 
 <main>
@@ -161,6 +162,17 @@
   <section class="panel"><h2>Nach Markt</h2><div class="tablewrap" id="by-symbol"></div></section>
   <section class="panel"><h2>Nach Ausstieg</h2><div class="tablewrap" id="by-reason"></div></section>
   <section class="panel wide" id="by-trader-panel"><h2>Nach kopiertem Trader</h2><div class="tablewrap" id="by-trader"></div></section>
+</div>
+
+<div class="tab" id="tab-learn">
+  <section class="panel wide"><h2>Ergebnis der Lernschleife <small id="learn-time"></small></h2>
+    <div class="phase" id="learn-verdict">–</div><div class="muted" id="learn-summary"></div>
+    <p class="note" id="learn-note">Gezählt wird nur, was auf Daten funktioniert, die beim Auswählen nicht verwendet wurden
+      (Walk-Forward). Zusätzlich muss das Ergebnis besser sein als mindestens 90 % von Zufalls-Einstiegen zu denselben Uhrzeiten.</p></section>
+  <section class="panel wide"><h2>Walk-Forward <small>gewählt nur mit Daten davor, geprüft im Abschnitt</small></h2><div class="tablewrap" id="learn-windows"></div></section>
+  <section class="panel wide"><h2>Alle Strategien <small>gesamter Zeitraum, nur zur Übersicht (zum Auswählen zählt das nicht)</small></h2><div class="tablewrap" id="learn-board"></div></section>
+  <section class="panel wide"><h2>Daten <small>wachsen mit jeder Runde</small></h2><div class="tablewrap" id="learn-data"></div></section>
+  <section class="panel wide"><h2>Letzte Out-of-Sample-Trades</h2><div class="tablewrap" id="learn-trades"></div></section>
 </div>
 
 <div class="tab" id="tab-copy">
@@ -452,6 +464,41 @@ function renderPositions() {
     'Keine offenen Positionen oder noch nicht geladen');
 }
 
+function renderLearn(s) {
+  const R = s.research, nav = $('nav-learn');
+  nav.hidden = !R;
+  if (!R) { if (tab === 'learn') show('overview'); return; }
+  const r = R.result;
+  if (!r) { $('learn-verdict').textContent = 'Erste Lernrunde läuft …'; $('learn-summary').textContent = R.status ? R.status.phase : ''; return; }
+  const o = r.out_of_sample || {};
+  $('learn-time').textContent = 'Runde ' + r.round + ' · ' + new Date(r.updated).toLocaleString('de-DE') + ' · ' + r.seconds + ' s';
+  $('learn-verdict').innerHTML = r.passed ? '<span class="up">BESTANDEN: ' + esc(r.live_pick) + ' wird für Paper Trading übernommen</span>'
+    : '<span class="warn">Noch keine Strategie mit echtem Vorteil gefunden</span>';
+  $('learn-summary').innerHTML = `${r.candidates} Strategien getestet · Out-of-Sample: ${o.trades} Trades, Trefferquote ${pct(o.win_rate)}, ` +
+    `PF ${o.profit_factor == null ? '∞' : num(o.profit_factor)}, Ø ${signed(o.expectancy_r, rFmt)} · ` +
+    `besser als ${pct(r.random_beaten)} der Zufallsläufe (Zufall im Mittel ${r.random_median_r == null ? '–' : rFmt(r.random_median_r)})` +
+    (o.trades < 30 ? ' · <span class="warn">unter 30 Trades: noch zu wenig für eine Aussage</span>' : '');
+  $('learn-windows').innerHTML = table([
+    { h: 'Abschnitt', l: 1, f: w => esc(w.from.slice(0, 10) + ' – ' + w.to.slice(0, 10)) },
+    { h: 'Gewählte Strategie', l: 1, f: w => esc(w.strategy || 'keine besteht die Regeln') },
+    { h: 'Trades', f: w => w.test.trades }, { h: 'Treffer', f: w => pct(w.test.win_rate) },
+    { h: 'Ø R', f: w => signed(w.test.expectancy_r, rFmt) }, { h: 'Summe R', f: w => signed(w.test.sum_r, rFmt) }],
+    r.windows || [], 'Noch keine Abschnitte');
+  $('learn-board').innerHTML = table([
+    { h: 'Strategie', l: 1, f: x => esc(x.strategy) }, { h: 'Trades', f: x => x.trades }, { h: 'Treffer', f: x => pct(x.win_rate) },
+    { h: 'PF', f: x => x.profit_factor == null ? '∞' : num(x.profit_factor) }, { h: 'Ø R', f: x => signed(x.expectancy_r, rFmt) }],
+    r.leaderboard || [], 'Noch keine Ergebnisse');
+  $('learn-data').innerHTML = table([
+    { h: 'Markt', l: 1, f: x => esc(x[0]) }, { h: 'Kerzen', f: x => x[1].bars.toLocaleString('de-DE') },
+    { h: 'von', l: 1, f: x => esc(x[1].from) }, { h: 'bis', l: 1, f: x => esc(x[1].to) }],
+    Object.entries(r.markets || {}), '–');
+  $('learn-trades').innerHTML = table([
+    { h: 'Einstieg', l: 1, f: t => esc(t.time) }, { h: 'Markt', l: 1, f: t => esc(t.symbol) }, { h: 'Strategie', l: 1, f: t => esc(t.strategy) },
+    { h: 'Richtung', l: 1, f: t => t.side > 0 ? '<span class="up">LONG</span>' : '<span class="down">SHORT</span>' },
+    { h: 'Grund', l: 1, f: t => esc(reasonName(t.reason)) }, { h: 'R', f: t => signed(t.r, rFmt) }],
+    (r.recent_oos_trades || []).slice().reverse(), 'Noch keine Out-of-Sample-Trades');
+}
+
 function renderCopy(s) {
   const c = s.copy;
   $('nav-copy').hidden = !c;
@@ -504,7 +551,7 @@ function renderControl(s) {
   b.hidden = !c.controllable;
   if (ctlBusy) return;
   b.className = c.running ? 'stop' : 'start';
-  b.textContent = c.running ? '⏸ Pausieren' : '▶ Bot starten';
+  b.textContent = c.running ? '⏸ Pausieren' : '▶ ' + (c.label || 'Bot') + ' starten';
   b.title = c.running ? `läuft seit ${c.started ? new Date(c.started).toLocaleString('de-DE') : '?'}` : 'Startet das Kopieren mit Spielgeld';
 }
 async function toggleBot() {
@@ -523,17 +570,24 @@ function renderActivity(s) {
   panel.hidden = !c.controllable && !a;
   if (panel.hidden) return;
   if (!c.running) {
-    $('act-phase').innerHTML = '⏸ Bot ist pausiert';
-    $('act-detail').textContent = a && a.updated ? `Zuletzt aktiv: ${new Date(a.updated).toLocaleString('de-DE')}. Mit „Bot starten“ geht es weiter, Konto und Positionen bleiben erhalten.` : 'Mit „Bot starten“ beginnt das Kopieren mit Spielgeld.';
+    $('act-phase').innerHTML = '⏸ ' + esc(c.label || 'Bot') + ' ist pausiert';
+    $('act-detail').textContent = a && a.updated ? `Zuletzt aktiv: ${new Date(a.updated).toLocaleString('de-DE')}. Mit „${c.label || 'Bot'} starten“ geht es weiter, alle Daten bleiben erhalten.` : `Mit „${c.label || 'Bot'} starten“ geht es los (nur Spielgeld).`;
     $('act-checks').innerHTML = ''; $('act-time').textContent = '';
   } else {
     const phase = a ? a.phase : 'startet…';
     $('act-phase').innerHTML = `<span class="spin"></span>${esc(phase)}`;
     let detail = c.started ? `Läuft seit ${new Date(c.started).toLocaleString('de-DE')}` : '';
     if (a && a.loop) detail += ` · Runde ${a.loop}`;
-    if (a && a.next_round) { const sec = Math.max(0, Math.round((Date.parse(a.next_round) - Date.now()) / 1000)); detail += ` · nächste Prüfung in ${sec} s`; }
+    if (a && a.next_round) { const sec = Math.max(0, Math.round((Date.parse(a.next_round) - Date.now()) / 1000)); detail += (s.live && s.live.connected) ? ` · Kontrollrunde in ${sec} s` : ` · nächste Prüfung in ${sec} s`; }
     if (a && a.open && a.open.length) detail += ` · offen: ${a.open.join(', ')}`;
     if (a && a.halted) detail += ' · Tageslimit erreicht, keine neuen Trades';
+    const lv = s.live;
+    if (lv && lv.updated && Date.now() - Date.parse(lv.updated) < 60000) {
+      detail += lv.connected ? ' · 🟢 live verbunden' : ' · 🟡 Live-Verbindung wird aufgebaut';
+      if (a && a.open && a.open.length) detail += ` · nicht realisiert ${lv.unrealized >= 0 ? '+' : ''}${(+lv.unrealized || 0).toFixed(2)} $`;
+      const px = Object.entries(lv.prices || {}).slice(0, 6).map(([k, v]) => `${k} ${(+v).toLocaleString('de-DE')}`);
+      if (px.length) detail += ' · ' + px.join(' · ');
+    }
     $('act-detail').textContent = detail;
     $('act-time').textContent = a && a.updated ? 'Stand ' + new Date(a.updated).toLocaleTimeString('de-DE') : '';
     $('act-checks').innerHTML = table([
@@ -556,7 +610,7 @@ async function loadLog() {
 
 function render(s) {
   S = s;
-  renderControl(s); renderActivity(s); loadLog();
+  renderControl(s); renderActivity(s); loadLog(); renderLearn(s);
   renderStatus(s); renderHero(s); renderCopy(s);
   renderOverview(s); renderMarkets(s); renderTrades(s); renderStats(s); renderCoinSelect(s);
 }
