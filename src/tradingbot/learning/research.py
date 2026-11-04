@@ -384,6 +384,11 @@ def run(cfg: Config, family: str, data_dir: Path, every_hours: float = 6, rounds
                     from tradingbot.data import binance
                     src = (lambda s=sym: binance.history(s, cfg.timeframe, since=cfg.history_period,
                                                          cache_dir=data_dir / "raw" / "binance"))
+                if src is None and m.get("source") == "databento":
+                    from tradingbot.data import databento
+                    src = (lambda m=m: databento.history(m["databento"], cfg.timeframe, since=cfg.history_period,
+                                                         cache_dir=data_dir / "raw" / "databento",
+                                                         max_cost=float(m.get("max_cost", 10))))
                 frames[sym] = update_archive(sym, cfg.timeframe, cfg.history_period, data_dir / "archive", src)
             except Exception as e:
                 log.warning("%s: %s", sym, e)

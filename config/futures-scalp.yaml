@@ -1,0 +1,33 @@
+# Futures-Scalping-Lernschleife mit echten CME-Kerzen von Databento (1-Minuten-Kerzen, auf 5m zusammengefasst).
+# Braucht DATABENTO_API_KEY in .env. Kosten vorher anzeigen:  tradingbot data-cost --config config/futures-scalp.yaml
+#   tradingbot learn --family ict --config config/futures-scalp.yaml
+mode: paper
+
+markets:               # databento: fortlaufender Kontrakt mit dem meisten Volumen; max_cost = Kostenlimit je Markt in $
+  - {symbol: "GC", name: "Gold",       source: databento, databento: "GC.v.0", point_value: 10.0,   tick: 0.1,   max_cost: 10}
+  - {symbol: "SI", name: "Silber",     source: databento, databento: "SI.v.0", point_value: 1000.0, tick: 0.005, max_cost: 10}
+  - {symbol: "NQ", name: "Nasdaq 100", source: databento, databento: "NQ.v.0", point_value: 2.0,    tick: 0.25,  max_cost: 10}
+  - {symbol: "ES", name: "S&P 500",    source: databento, databento: "ES.v.0", point_value: 5.0,    tick: 0.25,  max_cost: 10}
+
+timeframe: "5m"
+history_period: "2021-01-01"   # bei source databento: ab diesem Datum
+
+account:
+  start_capital: 10000.0
+  fee_per_trade: 1.0
+  slippage_ticks: 1
+
+risk:
+  risk_per_trade_pct: 1.0
+  reward_risk: 3.0
+  atr_period: 14
+  sl_atr_mult: 1.5
+  max_daily_loss_pct: 3.0
+  max_open_positions: 2
+
+selection:
+  train_bars: 2000
+  test_bars: 500
+  min_trades: 30
+  min_profit_factor: 1.2
+  min_win_rate: 0.0

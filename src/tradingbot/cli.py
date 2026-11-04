@@ -111,6 +111,25 @@ def cmd_learn(args, cfg):
                  workers=args.workers if args.workers > 0 else max(1, (os.cpu_count() or 2) // 2))
 
 
+def cmd_data_cost(args, cfg):
+    """Was wuerde der Download bei Databento kosten? (Abfrage ist kostenlos, laedt nichts)"""
+    import pandas as pd
+    from tradingbot.data import databento
+    if not databento.api_key():
+        print("DATABENTO_API_KEY fehlt in .env (siehe src/tradingbot/data/databento.py)")
+        return
+    end = (pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=1)).isoformat()
+    start = pd.Timestamp(cfg.history_period, tz="UTC").isoformat()
+    total = 0.0
+    for m in cfg.markets:
+        if m.get("source") != "databento":
+            continue
+        c = databento.cost(m["databento"], start, end)
+        total += c
+        print(f"{m['symbol']:4s} {m['databento']:8s} {start[:10]} bis {end[:10]}: {c:8.2f} $")
+    print(f"Zusammen: {total:.2f} $ (Startguthaben bei Databento: 125 $)")
+
+
 def cmd_status(args, cfg):
     """Kurzer Ueberblick im Terminal: Konto, offene Positionen, letzte Trades und Ereignisse."""
     import csv
@@ -166,6 +185,7 @@ def main(argv=None):
     sp = sub.add_parser("dashboard", help="Live-Dashboard im Browser")
     sp.add_argument("--port", type=int, default=8050)
     sp.add_argument("--no-browser", action="store_true")
+    sub.add_parser("data-cost", parents=[common], help="Kosten fuer den Databento-Download anzeigen (laedt nichts)")
     sp = sub.add_parser("learn", parents=[common], help="Dauer-Lernschleife: Strategien immer wieder ehrlich testen")
     sp.add_argument("--family", choices=["ict", "momentum", "all"], default="ict",
                     help="ict = ICT/TJR-Scalping (Futures), momentum = Momentum/Volumen/RSI (Krypto)")
@@ -205,7 +225,7 @@ def main(argv=None):
         print(f"Kerzen: {cfg.timeframe}, Historie: {cfg.history_period}, Ausstieg: {cfg.risk.exit_mode}")
     {"backtest": cmd_backtest, "select": cmd_select, "paper": cmd_paper,
      "dashboard": cmd_dashboard, "traders": cmd_traders, "status": cmd_status,
-     "learn": cmd_learn}[args.cmd](args, cfg)
+     "learn": cmd_learn, "data-cost": cmd_data_cost}[args.cmd](args, cfg)
 
 
 if __name__ == "__main__":
