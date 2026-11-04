@@ -7,7 +7,15 @@ REPO="$(pwd)"
 APP="$REPO/Trading Bot.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-swiftc -O -o "$APP/Contents/MacOS/TradingBot" macapp/main.swift -framework Cocoa -framework WebKit
+# Das Standard-SDK passt manchmal nicht zum Compiler ("this SDK is not supported by the compiler"), dann aeltere probieren
+BIN="$APP/Contents/MacOS/TradingBot"
+build() { swiftc "$@" -O -o "$BIN" macapp/main.swift -framework Cocoa -framework WebKit 2>/dev/null; }
+if ! build; then
+  for SDK in $(ls -d /Library/Developer/CommandLineTools/SDKs/MacOSX[0-9]*.[0-9]*.sdk 2>/dev/null | sort -rV); do
+    build -sdk "$SDK" && break
+  done
+fi
+[ -x "$BIN" ] || { echo "Bauen fehlgeschlagen. Fehlermeldung:"; swiftc -O -o "$BIN" macapp/main.swift -framework Cocoa -framework WebKit; exit 1; }
 if command -v iconutil >/dev/null 2>&1; then
   SET="$(mktemp -d)/AppIcon.iconset"; mkdir -p "$SET"
   for s in 16 32 128 256 512; do
