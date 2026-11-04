@@ -225,13 +225,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         url = urlparse(self.path)
+        try:  # Body immer zuerst lesen: sonst kann eine Ablehnung (403/404) per Verbindungs-Reset verloren gehen
+            raw = self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 10_000))
+        except (ValueError, OSError):
+            raw = b""
         if url.path not in ("/api/control/start", "/api/control/stop"):
             return self._send(404, b"not found", "text/plain")
         if not self._local_request():
             return self._json({"error": "nicht erlaubt"}, 403)
         try:
-            length = min(int(self.headers.get("Content-Length") or 0), 10_000)
-            body = json.loads(self.rfile.read(length) or b"{}")
+            body = json.loads(raw or b"{}")
             bot_id = str(body.get("bot") or current_bot() or "")
             fn = control.start if url.path.endswith("start") else control.stop
             self._json(fn(bot_id))
