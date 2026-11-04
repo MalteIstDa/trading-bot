@@ -195,7 +195,8 @@ def evaluate(frames: dict[str, pd.DataFrame], cfg: Config, family: str, folds: i
         if _ok(tf, start, end, min_trades, min_pf):
             live_pick = name
             break
-    passed = total["trades"] >= 30 and total["expectancy_r"] > 0 and beat >= 0.9 and live_pick is not None
+    beat = float(beat)
+    passed = bool(total["trades"] >= 30 and total["expectancy_r"] > 0 and beat >= 0.9 and live_pick is not None)
     board.sort(key=lambda r: r["expectancy_r"], reverse=True)
     return {"family": family, "markets": {s: {"bars": len(df), "from": str(df.index[0])[:16], "to": str(df.index[-1])[:16]}
                                          for s, df in frames.items()},
@@ -241,15 +242,15 @@ def run(cfg: Config, family: str, data_dir: Path, every_hours: float = 6, rounds
             with (out_dir / "history.jsonl").open("a") as f:
                 f.write(json.dumps({"time": res["updated"], "passed": res["passed"], "oos": res["out_of_sample"],
                                     "random_beaten": res["random_beaten"], "live_pick": res["live_pick"],
-                                    "bars": sum(v["bars"] for v in res["markets"].values())}) + "\n")
+                                    "bars": sum(v["bars"] for v in res["markets"].values())}, default=str) + "\n")
             if res["passed"]:
                 (data_dir / "selection.json").write_text(json.dumps(
                     {"timeframe": cfg.timeframe, "exit_mode": cfg.risk.exit_mode,
                      "strategies": {s: res["live_pick"] for s in frames}, "source": "learn", "updated": res["updated"]},
-                    indent=2))
+                    indent=2, default=str))
             oos = res["out_of_sample"]
             log.info("Runde %d: OOS %d Trades, Exp %+.2fR, besser als %.0f%% der Zufallslaeufe -> %s", n,
-                     oos["trades"], oos["expectancy_r"], 100 * res["random_beaten"],
+                     oos.get("trades") or 0, oos.get("expectancy_r") or 0.0, 100 * (res.get("random_beaten") or 0),
                      "BESTANDEN" if res["passed"] else "nicht bestanden")
         if rounds is not None and n >= rounds:
             break

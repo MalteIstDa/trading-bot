@@ -297,6 +297,8 @@ def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m", rescan_hou
         tmp.write_text(json.dumps(row))
         tmp.replace(f)
 
+    last_konto = [None, 0.0]
+
     def candles_15m(coin):
         df = hl.candles(coin, interval, _now_ms() - 3 * DAY_MS)
         frames[coin] = df
@@ -441,7 +443,10 @@ def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m", rescan_hou
                     watch_frames[coin] = hl.candles(coin, interval, _now_ms() - 3 * DAY_MS)
                 except Exception as e:
                     log.warning("%s Kerzen: %s", coin, e)
-        log.info("Konto: %.2f | offen: %s", broker.equity(), list(broker.open_positions()) or "-")
+        konto = (round(broker.equity(), 2), tuple(broker.open_positions()))
+        if konto != last_konto[0] or time.time() - last_konto[1] > 600:  # Log nicht bei jeder Live-Runde fluten
+            log.info("Konto: %.2f | offen: %s", broker.equity(), list(broker.open_positions()) or "-")
+            last_konto[:] = [konto, time.time()]
         strategies = {c: f"Kopie von {_short(owner.get(c, {}).get('trader', '?'))}" for c in broker.open_positions()}
         extra = {
             "mode": "copy", "currency": "USD", "halted": rm.halted,
@@ -470,8 +475,8 @@ def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m", rescan_hou
             time.sleep(poll_seconds)
             continue
         # Live warten: Preis-Ticks pruefen SL/TP sofort; ein Fill eines Traders startet sofort eine neue Runde.
-        deadline, earliest = time.time() + poll_seconds, time.time() + 3
-        last_write = 0.0
+        deadline, earliest = time.time() + poll_seconds, time.time() + 15
+        last_write, traded = 0.0, False
         import queue as _q
         while time.time() < deadline:
             try:
@@ -481,9 +486,10 @@ def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m", rescan_hou
             if ev and ev[0] == "mids":
                 on_live_prices()
             elif ev and ev[0] == "fill":
-                log.info("Live: %s hat gerade gehandelt (%s)", _short(ev[1] or "?"), ", ".join(ev[2][:3]))
-                while time.time() < earliest:  # nicht oefter als alle 3 s eine volle Runde
-                    time.sleep(0.2)
+                if not traded:
+                    log.info("Live: %s hat gerade gehandelt (%s)", _short(ev[1] or "?"), ", ".join(ev[2][:3]))
+                traded = True
+            if traded and time.time() >= earliest:  # volle Runde hoechstens alle 15 s, SL/TP laufen weiter live
                 break
             if time.time() - last_write > 2:
                 write_live()
