@@ -45,3 +45,10 @@ def test_control_endpoint_needs_own_header(monkeypatch, tmp_path):
     finally:
         control.stop("copy")
         httpd.shutdown()
+
+
+def test_state_json_has_no_infinity():
+    from tradingbot.dashboard.server import _finite
+    import json
+    out = json.dumps(_finite({"pf": float("inf"), "w": [{"x": float("nan")}, 1.5]}), allow_nan=False)
+    assert out == '{"pf": null, "w": [{"x": null}, 1.5]}'

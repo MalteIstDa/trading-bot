@@ -572,10 +572,12 @@ function show(name) {
 
 async function tick() {
   try {
-    const r = await fetch('/api/state' + (botId ? '?bot=' + encodeURIComponent(botId) : ''));
+    let r;
+    try { r = await fetch('/api/state' + (botId ? '?bot=' + encodeURIComponent(botId) : '')); }
+    catch (e) { $('status').textContent = 'Dashboard-Server nicht erreichbar'; $('dot').className = 'dot stale'; return; }
     render(await r.json());
     loadLive(); loadPositions();
-  } catch (e) { $('status').textContent = 'Dashboard-Server nicht erreichbar'; $('dot').className = 'dot stale'; }
+  } catch (e) { console.error(e); $('status').textContent = 'Anzeigefehler: ' + e.message; $('dot').className = 'dot stale'; }
 }
 
 $('ctl').addEventListener('click', toggleBot);

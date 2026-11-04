@@ -145,6 +145,17 @@ def trader_positions(addresses: list[str]) -> dict[str, dict]:
     return {a: hl.positions(a) for a in addresses}
 
 
+def _finite(v):
+    """Browser-JSON kennt kein Infinity/NaN (z. B. Profit Factor ohne Verlusttrade): als null senden."""
+    if isinstance(v, float):
+        return v if v == v and abs(v) != float("inf") else None
+    if isinstance(v, dict):
+        return {k: _finite(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_finite(x) for x in v]
+    return v
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code: int, body: bytes, ctype: str, headers: dict | None = None) -> None:
         self.send_response(code)
@@ -156,7 +167,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _json(self, value, code: int = 200) -> None:
-        self._send(code, json.dumps(value).encode(), "application/json")
+        self._send(code, json.dumps(_finite(value), allow_nan=False).encode(), "application/json")
 
     def _api(self, key: tuple, fn) -> None:
         try:
