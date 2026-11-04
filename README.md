@@ -81,6 +81,19 @@ Auf Hyperliquid sind Positionen und Trades aller Konten oeffentlich. Der Bot nut
 - **Grenzen:** Das Leaderboard zeigt nur heute existierende Konten (Survivorship Bias). Hyperliquid hat eine
   Mindestorder von 10 $. Mit 20 $ geht das nur mit Hebel; der Paper-Bot ueberspringt kleinere Orders.
 
+### Mac-App mit Start/Pause-Knopf
+
+```bash
+./macapp/build.sh        # einmalig, baut "Trading Bot.app" im Ordner trading-bot
+open "Trading Bot.app"   # oder doppelklicken / ins Dock ziehen
+```
+
+Die App zeigt das Dashboard in einem eigenen Fenster. Oben gibt es den Knopf **Bot starten / Pausieren**.
+Unter **Was der Bot gerade macht** siehst du live, welchen Trader er gerade prueft, was die Trader halten,
+wann die naechste Runde kommt und das Protokoll. Der Bot laeuft im Hintergrund weiter, auch wenn das Fenster zu ist;
+Pausieren beendet ihn sauber, Konto und Positionen bleiben gespeichert. Zuklappen des Macs pausiert trotzdem.
+Den Knopf gibt es auch im Browser-Dashboard (`./copy-trading.sh dashboard`).
+
 ### Meldungen aufs Handy (Telegram, optional)
 
 1. In Telegram `@BotFather` anschreiben, `/newbot`, Namen vergeben. Du bekommst einen Token.

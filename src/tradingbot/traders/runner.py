@@ -73,11 +73,12 @@ def _load_fills(cands: list[dict], start_ms: int, end_ms: int) -> dict[str, list
 
 # Gleiche Auswahlregeln fuer scan (live) und test (Walk-Forward), damit der Test genau das prueft, was watch kopiert
 MIN_T, MIN_OPENS, RANK_BY = 0.5, 0.05, "account_value"
+MIN_PNL = 1000.0  # $ Gewinn im Auswahlzeitraum: Konten, die praktisch nichts verdient haben, nicht kopieren
 
 
 def choose(scores: list, keep: int, min_t: float = MIN_T, min_opens: float = MIN_OPENS) -> list:
     return [s for s in sorted(scores, key=lambda s: s.score, reverse=True)
-            if s.t_stat >= min_t and s.opens_per_day >= min_opens and s.pnl > 0][:keep]
+            if s.t_stat >= min_t and s.opens_per_day >= min_opens and s.pnl >= MIN_PNL][:keep]
 
 
 def scan(cfg: Config, days: int = 30, top: int = 80, keep: int = 5) -> list[dict]:
@@ -96,7 +97,7 @@ def scan(cfg: Config, days: int = 30, top: int = 80, keep: int = 5) -> list[dict
     chosen = [s.to_dict() for s in choose(scores, keep)]
     (_dir() / "selected.json").write_text(json.dumps({"created": end, "days": days, "traders": chosen}, indent=2))
     print(f"\nAusgewaehlt fuer `tradingbot traders watch`: {len(chosen)} Konten "
-          f"(t-Wert >= {MIN_T}, im Plus, mind. {MIN_OPENS} neue Positionen/Tag; gleiche Regeln wie im Test)")
+          f"(t-Wert >= {MIN_T}, mind. {MIN_PNL:,.0f} $ Gewinn, mind. {MIN_OPENS} neue Positionen/Tag; gleiche Regeln wie im Test)")
     print("Wichtig: Gut in der Vergangenheit heisst nicht gut in Zukunft. Erst `tradingbot traders test` ausfuehren.")
     return chosen
 
@@ -199,6 +200,15 @@ def _event(kind: str, text: str, push: bool = True) -> None:  # kind: copy|close
         notify.send(text)
 
 
+def _status(phase: str, **info) -> None:
+    """Was der Bot gerade tut, fuer die Live-Ansicht im Dashboard (traders/status.json)."""
+    row = {"updated": pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds"), "phase": phase, **info}
+    f = _dir() / "status.json"
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(json.dumps(row, default=str), encoding="utf-8")
+    tmp.replace(f)
+
+
 def recent_events(n: int = 50) -> list[dict]:
     f = _dir() / "events.jsonl"
     if not f.exists():
@@ -257,6 +267,17 @@ def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m", rescan_hou
         frames[coin] = df
         return df
 
+    import signal
+
+    def _on_term(*_):
+        _event("info", "Copy-Bot pausiert (Konto und offene Positionen bleiben gespeichert)", push=False)
+        _status("Pausiert", equity=broker.equity(), open=list(broker.open_positions()))
+        raise SystemExit(0)
+
+    try:
+        signal.signal(signal.SIGTERM, _on_term)
+    except ValueError:  # nicht im Haupt-Thread (z. B. in Tests)
+        pass
     _event("info", f"Copy-Bot gestartet (Spielgeld): kopiere {', '.join(_short(t['address']) for t in selection)} "
                     f"| Konto {broker.equity():.2f} $", push=False)
 
@@ -264,6 +285,7 @@ def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m", rescan_hou
         loop += 1
         # Trader taeglich neu auswaehlen. Wer noch eine von uns kopierte Position hat, wird weiter beobachtet.
         if rescan_hours and _now_ms() - last_scan > rescan_hours * 3_600_000:
+            _status("Wähle die Trader neu aus (dauert einige Minuten)", loop=loop)
             try:
                 fresh = scan(cfg)
                 if fresh:
@@ -280,7 +302,10 @@ def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m", rescan_hou
             _event("risk", f"Tagesverlust-Limit ({cfg.risk.max_daily_loss_pct:g} %) erreicht: heute keine neuen Trades mehr")
         was_halted = rm.halted
 
-        for t in traders:
+        checks: list[dict] = []
+        for i, t in enumerate(traders, 1):
+            _status(f"Prüfe Trader {i}/{len(traders)}: {_short(t)}", loop=loop, equity=broker.equity(),
+                    open=list(broker.open_positions()), checks=checks)
             try:
                 pos = hl.positions(t)
             except Exception as e:
@@ -288,6 +313,11 @@ def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m", rescan_hou
                 continue
             prev = last.get(t)
             last[t] = pos
+            opened = [c for c in pos if prev is not None and (c not in prev or (prev[c]["size"] > 0) != (pos[c]["size"] > 0))]
+            closed_c = [c for c in (prev or {}) if c not in pos]
+            checks.append({"trader": _short(t), "positions": len(pos),
+                           "coins": [f"{c} {'L' if p['size'] > 0 else 'S'}" for c, p in list(pos.items())[:6]],
+                           "new": opened, "closed": closed_c})
             if prev is None:  # Start: bestehende Positionen nicht nachkaufen, nur neue kopieren
                 continue
             for coin, p in pos.items():
@@ -343,6 +373,8 @@ def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m", rescan_hou
             time.sleep(0.3)
         # SL/TP pruefen: nur abgeschlossene 1m-Kerzen nach dem Einstieg, jede nur einmal
         for coin in list(broker.open_positions()):
+            _status(f"Prüfe Stop-Loss und Take-Profit für {coin}", loop=loop, equity=broker.equity(),
+                    open=list(broker.open_positions()), checks=checks)
             since = max(checked.get(coin, 0), owner.get(coin, {}).get("opened", _now_ms() - 10 * 60_000))
             try:
                 df = hl.candles(coin, "1m", since)
@@ -390,5 +422,9 @@ def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m", rescan_hou
                 bot.write_dashboard(cfg, broker, strategies, frames)
         except Exception as e:
             log.warning("Dashboard: %s", e)
+        nxt = pd.Timestamp.now(tz="UTC") + pd.Timedelta(seconds=poll_seconds)
+        _status("Wartet auf die nächste Runde", loop=loop, equity=broker.equity(), open=list(broker.open_positions()),
+                checks=checks, next_round=nxt.isoformat(timespec="seconds"), poll_seconds=poll_seconds,
+                halted=rm.halted, traders=len(traders))
         if max_loops is None or loop < max_loops:
             time.sleep(poll_seconds)

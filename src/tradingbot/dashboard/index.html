@@ -67,6 +67,15 @@
   .note { color: var(--muted); margin: 8px 0 0; white-space: normal; }
   .warn { color: var(--amber); }
   .verdict { font-weight: 700; }
+  #ctl { font-weight: 700; padding: 6px 14px; }
+  #ctl.start { border-color: var(--green); color: var(--green); }
+  #ctl.stop { border-color: var(--amber); color: var(--amber); }
+  #ctl[disabled] { opacity: .5; cursor: wait; }
+  .phase { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .phase .spin { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-right: 8px; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .2; } }
+  pre.log { margin: 8px 0 0; max-height: 260px; overflow: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: 11px; white-space: pre-wrap; word-break: break-word; }
+  details summary { cursor: pointer; color: var(--muted); margin-top: 8px; }
   a { color: var(--blue); }
   footer { padding: 0 20px 16px; color: var(--muted); font-size: 11px; }
   footer a { color: var(--muted); }
@@ -77,6 +86,7 @@
 <header>
   <div class="brand"><b>TRADING BOT</b><span class="badge">PAPER · SPIELGELD</span></div>
   <select id="bot" aria-label="Bot auswählen"></select>
+  <button id="ctl" hidden>▶ Bot starten</button>
   <div class="status"><span class="dot" id="dot"></span><span id="status">verbinde…</span></div>
 </header>
 <div class="hero">
@@ -102,6 +112,11 @@
 
 <main>
 <div class="tab" id="tab-overview">
+  <section class="panel wide" id="activity-panel"><h2>Was der Bot gerade macht <small id="act-time"></small></h2>
+    <div class="phase" id="act-phase">–</div><div class="muted" id="act-detail"></div>
+    <div class="tablewrap" id="act-checks"></div>
+    <details id="log-box"><summary>Protokoll anzeigen (letzte 120 Zeilen)</summary><pre class="log" id="log"></pre></details>
+  </section>
   <section class="panel wide"><h2>Kontoverlauf <small id="setup"></small></h2><div class="chart" id="equity-chart"></div></section>
   <section class="panel"><h2>Offene Positionen</h2><div class="tablewrap" id="open"></div></section>
   <section class="panel"><h2>Ereignisse <small>neueste zuerst</small></h2><ul class="feed" id="feed"></ul></section>
@@ -483,8 +498,65 @@ function renderStatus(s) {
   $('live-panel').hidden = s.bot === 'futures';
 }
 
+let ctlBusy = false;
+function renderControl(s) {
+  const c = s.control || {}, b = $('ctl');
+  b.hidden = !c.controllable;
+  if (ctlBusy) return;
+  b.className = c.running ? 'stop' : 'start';
+  b.textContent = c.running ? '⏸ Pausieren' : '▶ Bot starten';
+  b.title = c.running ? `läuft seit ${c.started ? new Date(c.started).toLocaleString('de-DE') : '?'}` : 'Startet das Kopieren mit Spielgeld';
+}
+async function toggleBot() {
+  const running = (S.control || {}).running, b = $('ctl');
+  ctlBusy = true; b.disabled = true; b.textContent = running ? 'pausiere…' : 'starte…';
+  try {
+    const r = await fetch('/api/control/' + (running ? 'stop' : 'start'), { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Trading-Bot': '1' }, body: JSON.stringify({ bot: S.bot }) });
+    const j = await r.json();
+    if (j.error) $('act-detail').innerHTML = `<span class="warn">${esc(j.error)}</span>`;
+  } catch (e) { $('act-detail').innerHTML = '<span class="warn">Dashboard-Server nicht erreichbar</span>'; }
+  ctlBusy = false; b.disabled = false; tick();
+}
+function renderActivity(s) {
+  const a = s.activity, c = s.control || {}, panel = $('activity-panel');
+  panel.hidden = !c.controllable && !a;
+  if (panel.hidden) return;
+  if (!c.running) {
+    $('act-phase').innerHTML = '⏸ Bot ist pausiert';
+    $('act-detail').textContent = a && a.updated ? `Zuletzt aktiv: ${new Date(a.updated).toLocaleString('de-DE')}. Mit „Bot starten“ geht es weiter, Konto und Positionen bleiben erhalten.` : 'Mit „Bot starten“ beginnt das Kopieren mit Spielgeld.';
+    $('act-checks').innerHTML = ''; $('act-time').textContent = '';
+  } else {
+    const phase = a ? a.phase : 'startet…';
+    $('act-phase').innerHTML = `<span class="spin"></span>${esc(phase)}`;
+    let detail = c.started ? `Läuft seit ${new Date(c.started).toLocaleString('de-DE')}` : '';
+    if (a && a.loop) detail += ` · Runde ${a.loop}`;
+    if (a && a.next_round) { const sec = Math.max(0, Math.round((Date.parse(a.next_round) - Date.now()) / 1000)); detail += ` · nächste Prüfung in ${sec} s`; }
+    if (a && a.open && a.open.length) detail += ` · offen: ${a.open.join(', ')}`;
+    if (a && a.halted) detail += ' · Tageslimit erreicht, keine neuen Trades';
+    $('act-detail').textContent = detail;
+    $('act-time').textContent = a && a.updated ? 'Stand ' + new Date(a.updated).toLocaleTimeString('de-DE') : '';
+    $('act-checks').innerHTML = table([
+      { h: 'Trader', l: 1, f: x => esc(x.trader) }, { h: 'Positionen', f: x => x.positions },
+      { h: 'hält gerade', l: 1, f: x => esc((x.coins || []).join(', ') || '–') },
+      { h: 'neu eröffnet', l: 1, f: x => x.new && x.new.length ? `<span class="up">${esc(x.new.join(', '))}</span>` : '–' },
+      { h: 'geschlossen', l: 1, f: x => x.closed && x.closed.length ? esc(x.closed.join(', ')) : '–' }],
+      (a && a.checks) || [], 'Erste Runde läuft, gleich erscheinen hier die geprüften Trader');
+  }
+}
+async function loadLog() {
+  if (!$('log-box').open) return;
+  try {
+    const j = await (await fetch('/api/log' + (S.bot ? '?bot=' + encodeURIComponent(S.bot) : ''))).json();
+    const el = $('log'), atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
+    el.textContent = (j.lines || []).join('\n') || 'Noch kein Protokoll';
+    if (atEnd) el.scrollTop = el.scrollHeight;
+  } catch (e) { /* naechster Versuch beim naechsten Tick */ }
+}
+
 function render(s) {
   S = s;
+  renderControl(s); renderActivity(s); loadLog();
   renderStatus(s); renderHero(s); renderCopy(s);
   renderOverview(s); renderMarkets(s); renderTrades(s); renderStats(s); renderCoinSelect(s);
 }
@@ -506,6 +578,8 @@ async function tick() {
   } catch (e) { $('status').textContent = 'Dashboard-Server nicht erreichbar'; $('dot').className = 'dot stale'; }
 }
 
+$('ctl').addEventListener('click', toggleBot);
+$('log-box').addEventListener('toggle', loadLog);
 $('nav').addEventListener('click', e => { if (e.target.dataset.tab) show(e.target.dataset.tab); });
 addEventListener('hashchange', () => show(location.hash.slice(1)));
 $('bot').addEventListener('change', e => { botId = e.target.value; store('bot', botId); traderPositions = {}; positionsLoaded = 0;

@@ -1,6 +1,7 @@
 """Lokales Live-Dashboard: http://localhost:8050 (nur 127.0.0.1, kein Zugriff von aussen).
 Liest die Dateien der Paper-Bots. Fuer Charts und die Positionen der kopierten Trader fragt es zusaetzlich die
-oeffentliche Hyperliquid-API ab, nur lesend. Es kann selbst keine Orders ausloesen."""
+oeffentliche Hyperliquid-API ab, nur lesend. Es kann selbst keine Orders ausloesen, nur den Paper-Bot
+starten und pausieren (POST /api/control, nur von dieser Seite aus)."""
 from __future__ import annotations
 
 import csv
@@ -13,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from tradingbot import bot
+from tradingbot import bot, control
 from tradingbot.config import ROOT
 from tradingbot.dashboard.stats import equity_stats, thin, trade_stats
 from tradingbot.traders import hyperliquid as hl
@@ -128,6 +129,8 @@ def build_state(name: str | None = None) -> dict:
     state["copy"] = copy_info(data, state.pop("traders", None))
     state["bots"] = available_bots()
     state["bot"] = name if name in BOTS else current_bot()
+    state["control"] = control.status(state["bot"] or "")
+    state["activity"] = _read_json(data / "traders" / "status.json")
     return state
 
 
@@ -178,6 +181,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "ungueltige Adresse"}, 400)
             else:
                 self._api(("positions", *addresses), lambda: trader_positions(addresses))
+        elif url.path == "/api/control":
+            self._json(control.status(q.get("bot") or current_bot() or ""))
+        elif url.path == "/api/log":
+            self._json({"lines": control.log_tail(q.get("bot") or current_bot() or "", 120)})
         elif url.path == "/api/trades.csv":
             path = data_dir(q.get("bot")) / bot.TRADES_CSV.name
             self._send(200, path.read_bytes() if path.exists() else b"", "text/csv; charset=utf-8",
@@ -188,6 +195,29 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, INDEX.read_bytes(), "text/html; charset=utf-8")
         else:
             self._send(404, b"not found", "text/plain")
+
+    def _local_request(self) -> bool:
+        """Schutz davor, dass eine fremde Webseite im Browser den Bot startet/stoppt: nur eigene Seite,
+        nur mit eigenem Header (den fremde Seiten ohne Erlaubnis nicht mitschicken koennen)."""
+        host = (self.headers.get("Host") or "").split(":")[0]
+        origin = self.headers.get("Origin")
+        same_origin = origin is None or urlparse(origin).hostname in ("127.0.0.1", "localhost")
+        return host in ("127.0.0.1", "localhost") and same_origin and self.headers.get("X-Trading-Bot") == "1"
+
+    def do_POST(self):  # noqa: N802
+        url = urlparse(self.path)
+        if url.path not in ("/api/control/start", "/api/control/stop"):
+            return self._send(404, b"not found", "text/plain")
+        if not self._local_request():
+            return self._json({"error": "nicht erlaubt"}, 403)
+        try:
+            length = min(int(self.headers.get("Content-Length") or 0), 10_000)
+            body = json.loads(self.rfile.read(length) or b"{}")
+            bot_id = str(body.get("bot") or current_bot() or "")
+            fn = control.start if url.path.endswith("start") else control.stop
+            self._json(fn(bot_id))
+        except Exception as e:
+            self._json({"error": str(e)}, 400)
 
     def log_message(self, *args):  # keine Log-Flut im Terminal
         pass
