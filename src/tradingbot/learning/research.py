@@ -276,7 +276,7 @@ def explore(frames: dict[str, pd.DataFrame], cfg: Config, family: str, state_fil
     disc_frames = {s: df[df.index < cut] for s, df in frames.items()}
     rng = np.random.default_rng(seed)
     base = [c for c in candidates(family) if repr(c) not in state["tried"]]
-    new = base + sample_variants(family, n_new, set(state["tried"]), rng)
+    new = base + sample_variants(family, n_new, set(state["tried"]) | {repr(b) for b in base}, rng)
     for strat in new:
         try:
             ts = _backtest_all(strat, disc_frames, cfg)
