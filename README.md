@@ -96,6 +96,15 @@ tradingbot learn --family ict                                          # Futures
 tradingbot learn --family momentum --config config/crypto-learn.yaml   # Krypto (9 Coins, 1h, 1000 $ Spielgeld)
 ```
 
+Zusaetzlich sucht jede Runde **neue Varianten** (zufaellige Parameter, bereits getestete werden uebersprungen).
+Ausgewaehlt wird nur auf den ersten 75 % der Daten; die letzten 25 % dienen als Pruefung. Je mehr Varianten schon
+geprueft wurden, desto hoeher die Huerde gegen Zufall (90 %, 95 %, ... bis 99,5 %). Ein Fund wird gemeldet
+(Log, Telegram, Obsidian), aber nie automatisch gehandelt. Ueber den Knopf laufen die Schleifen mit 3 Minuten Pause
+und niedriger Prozess-Prioritaet.
+
+Optional: `OBSIDIAN_LOGBOOK=/Pfad/zur/Logbuch.md` in `.env` schreibt wichtige Ereignisse (Copy-Trades, Funde,
+Zwischenstaende der Suche) automatisch oben ins Obsidian-Logbuch.
+
 Im Dashboard (und in der Mac-App) laufen beide auch ueber den Start-Knopf in den Reitern Futures/Krypto;
 die Ergebnisse stehen im Reiter **Lernen**.
 

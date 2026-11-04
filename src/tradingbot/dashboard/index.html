@@ -169,6 +169,8 @@
     <div class="phase" id="learn-verdict">–</div><div class="muted" id="learn-summary"></div>
     <p class="note" id="learn-note">Gezählt wird nur, was auf Daten funktioniert, die beim Auswählen nicht verwendet wurden
       (Walk-Forward). Zusätzlich muss das Ergebnis besser sein als mindestens 90 % von Zufalls-Einstiegen zu denselben Uhrzeiten.</p></section>
+  <section class="panel wide"><h2>Dauer-Suche <small>jede Runde neue Varianten; geprüft auf den letzten 25 % der Daten, die nie zum Auswählen dienen</small></h2>
+    <div class="phase" id="search-verdict">–</div><div class="muted" id="search-summary"></div><div class="tablewrap" id="search-top"></div></section>
   <section class="panel wide"><h2>Walk-Forward <small>gewählt nur mit Daten davor, geprüft im Abschnitt</small></h2><div class="tablewrap" id="learn-windows"></div></section>
   <section class="panel wide"><h2>Alle Strategien <small>gesamter Zeitraum, nur zur Übersicht (zum Auswählen zählt das nicht)</small></h2><div class="tablewrap" id="learn-board"></div></section>
   <section class="panel wide"><h2>Daten <small>wachsen mit jeder Runde</small></h2><div class="tablewrap" id="learn-data"></div></section>
@@ -478,6 +480,19 @@ function renderLearn(s) {
     `PF ${o.profit_factor == null ? '∞' : num(o.profit_factor)}, Ø ${signed(o.expectancy_r, rFmt)} · ` +
     `besser als ${pct(r.random_beaten)} der Zufallsläufe (Zufall im Mittel ${r.random_median_r == null ? '–' : rFmt(r.random_median_r)})` +
     (o.trades < 30 ? ' · <span class="warn">unter 30 Trades: noch zu wenig für eine Aussage</span>' : '');
+  const sr = r.search;
+  if (sr) {
+    const h = sr.holdout || {};
+    $('search-verdict').innerHTML = sr.passed ? '<span class="up">GEFUNDEN: ' + esc(sr.best) + ' besteht die strenge Prüfung (nur Paper, du entscheidest)</span>'
+      : '<span class="warn">Sucht weiter</span>';
+    $('search-summary').innerHTML = `${sr.tried.toLocaleString('de-DE')} Varianten getestet, ${sr.promising} vielversprechend im Entdeckungsteil` +
+      (sr.best ? ` · Beste: ${esc(sr.best)} · Prüfdaten (${esc(sr.holdout_from.slice(0, 10))} – ${esc(sr.holdout_to.slice(0, 10))}): ${h.trades} Trades, Ø ${signed(h.expectancy_r, rFmt)}, ` +
+        `besser als ${pct(sr.random_beaten)} der Zufallsläufe, nötig ${pct(sr.required)} (steigt mit jedem Versuch)` : '');
+    $('search-top').innerHTML = table([
+      { h: 'Variante', l: 1, f: x => esc(x.strategy) }, { h: 'Trades', f: x => x.trades },
+      { h: 'PF', f: x => x.profit_factor == null ? '∞' : num(x.profit_factor) }, { h: 'Ø R (Entdeckung)', f: x => signed(x.expectancy_r, rFmt) }],
+      sr.top || [], 'Noch keine Variante erfüllt die Regeln im Entdeckungsteil');
+  }
   $('learn-windows').innerHTML = table([
     { h: 'Abschnitt', l: 1, f: w => esc(w.from.slice(0, 10) + ' – ' + w.to.slice(0, 10)) },
     { h: 'Gewählte Strategie', l: 1, f: w => esc(w.strategy || 'keine besteht die Regeln') },

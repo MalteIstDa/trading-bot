@@ -52,3 +52,13 @@ def test_state_json_has_no_infinity():
     import json
     out = json.dumps(_finite({"pf": float("inf"), "w": [{"x": float("nan")}, 1.5]}), allow_nan=False)
     assert out == '{"pf": null, "w": [{"x": null}, 1.5]}'
+
+
+def test_vault_logbook_inserts_newest_on_top(tmp_path):
+    from tradingbot import vault
+    f = tmp_path / "Logbuch.md"
+    f.write_text("# Trading-Bot – Logbuch\n\nHandnotiz\n")
+    assert vault.add("erster", f) and vault.add("zweiter", f)
+    text = f.read_text()
+    assert text.index("zweiter") < text.index("erster") < text.index("Handnotiz")
+    assert not vault.add("x", tmp_path / "fehlt" / "a.md")

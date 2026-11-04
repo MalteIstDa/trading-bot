@@ -79,3 +79,19 @@ def test_research_round_writes_results(tmp_path):
     assert (tmp_path / "research" / "latest.json").exists()
     assert res["candidates"] == len(research.candidates("ict")) and res["leaderboard"]
     assert (tmp_path / "archive").exists()
+    assert "search" in res and res["search"]["tried"] >= len(research.candidates("ict"))
+
+
+def test_search_tries_new_variants_each_round(tmp_path):
+    cfg = load_config()
+    cfg.markets = cfg.markets[:1]
+    frames = {cfg.markets[0]["symbol"]: synthetic(6000, 3).tz_localize("UTC")}
+    state = tmp_path / "explored.json"
+    a = research.explore(frames, cfg, "momentum", state, n_new=5, min_trades=3, seed=1)
+    b = research.explore(frames, cfg, "momentum", state, n_new=5, min_trades=3, seed=2)
+    assert b["tried"] == a["tried"] + 5 and b["new_this_round"] == 5  # Grid nur einmal, dann nur Neues
+    import json
+    tried = json.loads(state.read_text())["tried"]
+    assert len(tried) == b["tried"]
+    if b["best"]:
+        assert b["required"] >= 0.9 and b["holdout_from"] < b["holdout_to"]

@@ -22,8 +22,8 @@ CLI = [sys.executable, "-c", "from tradingbot.cli import main; main()"]
 # Welche Bots per Knopf gestartet werden koennen: id -> (Datenordner, Befehl)
 COMMANDS = {
     "copy": (ROOT / "data" / "copy", [*CLI, "traders", "watch", "--config", str(ROOT / "config" / "hyperliquid.yaml")]),
-    "futures": (ROOT / "data", [*CLI, "learn", "--family", "ict"]),
-    "crypto": (ROOT / "data" / "crypto", [*CLI, "learn", "--family", "momentum",
+    "futures": (ROOT / "data", [*CLI, "learn", "--family", "ict", "--every", "0.05"]),
+    "crypto": (ROOT / "data" / "crypto", [*CLI, "learn", "--family", "momentum", "--every", "0.05",
                                           "--config", str(ROOT / "config" / "crypto-learn.yaml")]),
 }
 LABELS = {"copy": "Copy-Bot", "futures": "Lernschleife", "crypto": "Lernschleife"}

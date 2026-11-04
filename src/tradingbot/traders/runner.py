@@ -198,6 +198,9 @@ def _event(kind: str, text: str, push: bool = True) -> None:  # kind: copy|close
         fh.write(json.dumps(row) + "\n")
     if push:
         notify.send(text)
+    if kind in ("copy", "close", "risk", "scan"):
+        from tradingbot import vault
+        vault.add(f"Copy-Bot: {text}")
 
 
 def _status(phase: str, **info) -> None:
