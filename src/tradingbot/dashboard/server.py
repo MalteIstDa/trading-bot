@@ -204,6 +204,11 @@ class Handler(BaseHTTPRequestHandler):
             self._json(control.status(q.get("bot") or current_bot() or ""))
         elif url.path == "/api/log":
             self._json({"lines": control.log_tail(q.get("bot") or current_bot() or "", 120)})
+        elif url.path == "/api/reports":
+            from tradingbot import report
+            b = q.get("bot") or current_bot() or ""
+            folder = control.COMMANDS[b][0] if b in control.COMMANDS else data_dir(q.get("bot"))
+            self._json({"reports": report.latest(folder)})
         elif url.path == "/api/trades.csv":
             path = data_dir(q.get("bot")) / bot.TRADES_CSV.name
             self._send(200, path.read_bytes() if path.exists() else b"", "text/csv; charset=utf-8",

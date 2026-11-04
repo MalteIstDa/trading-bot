@@ -62,3 +62,38 @@ def test_vault_logbook_inserts_newest_on_top(tmp_path):
     text = f.read_text()
     assert text.index("zweiter") < text.index("erster") < text.index("Handnotiz")
     assert not vault.add("x", tmp_path / "fehlt" / "a.md")
+
+
+def test_report_summarises_session(tmp_path):
+    import json
+    from tradingbot import report
+    (tmp_path / "traders").mkdir()
+    (tmp_path / "paper_trades.csv").write_text(
+        "time,symbol,side,reason,pnl,r_multiple,equity,trader\n"
+        "2026-11-04T10:00:00+00:00,BTC,1,tp,3.0,3.0,23.0,0xa\n"
+        "2026-11-04T11:00:00+00:00,ETH,-1,sl,-1.0,-1.0,22.0,0xb\n"
+        "2026-11-03T11:00:00+00:00,SOL,1,sl,-1.0,-1.0,21.0,0xb\n")  # vor dem Start: zaehlt nicht
+    (tmp_path / "traders" / "events.jsonl").write_text(json.dumps({"time": "2026-11-04T09:30:00+00:00", "type": "copy", "text": "BTC Long"}) + "\n")
+    (tmp_path / "research").mkdir()
+    (tmp_path / "research" / "history.jsonl").write_text("\n".join(json.dumps(h) for h in [
+        {"time": "2026-11-04T08:00:00+00:00", "search_tried": 100},
+        {"time": "2026-11-04T10:00:00+00:00", "search_tried": 220, "search_best": "x(a=1)", "search_passed": False},
+        {"time": "2026-11-04T11:00:00+00:00", "search_tried": 340, "search_best": "x(a=2)", "search_passed": False}]))
+    rep = report.build("copy", "Copy-Bot", tmp_path, "2026-11-04T09:00:00+00:00", "2026-11-04T12:00:00+00:00")
+    assert rep["duration_s"] == 3 * 3600
+    assert rep["trading"]["closed"] == 2 and abs(rep["trading"]["pnl"] - 2.0) < 1e-9 and rep["trading"]["curve"] == [0.0, 3.0, 2.0]
+    assert rep["events"]["by_type"] == {"copy": 1}
+    assert rep["learning"]["rounds"] == 2 and rep["learning"]["tried_session"] == 240
+    path = report.save(rep, tmp_path)
+    assert report.latest(tmp_path)[0]["stopped"] == rep["stopped"] and path.exists()
+
+
+def test_stop_writes_report(tmp_path, monkeypatch):
+    import json
+    from tradingbot import control
+    monkeypatch.setitem(control.COMMANDS, "demo", (tmp_path, SLEEPER))
+    st = control.start("demo")
+    assert st["running"]
+    control.stop("demo")
+    reps = list((tmp_path / "reports").glob("*.json"))
+    assert len(reps) == 1 and json.loads(reps[0].read_text())["started"] == st["started"]

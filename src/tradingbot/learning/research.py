@@ -406,7 +406,8 @@ def run(cfg: Config, family: str, data_dir: Path, every_hours: float = 6, rounds
                 f.write(json.dumps({"time": res["updated"], "passed": res["passed"], "oos": res["out_of_sample"],
                                     "random_beaten": res["random_beaten"], "live_pick": res["live_pick"],
                                     "search_tried": res["search"]["tried"], "search_best": res["search"]["best"],
-                                    "search_passed": res["search"]["passed"],
+                                    "search_passed": res["search"]["passed"], "search_promising": res["search"]["promising"],
+                                    "search_holdout_r": (res["search"].get("holdout") or {}).get("expectancy_r"),
                                     "bars": sum(v["bars"] for v in res["markets"].values())}, default=str) + "\n")
             if res["search"]["passed"] and not (out_dir / "found.json").exists():
                 found = {"time": res["updated"], **{k: res["search"].get(k) for k in

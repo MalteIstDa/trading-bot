@@ -101,7 +101,13 @@ def stop(bot_id: str, timeout: float = 15) -> dict:
         time.sleep(0.3)
     if _alive(pid):
         os.kill(pid, signal.SIGKILL)
-    _pid_file(data).write_text(json.dumps({"pid": None, "stopped": _now()}))
+    stopped = _now()
+    _pid_file(data).write_text(json.dumps({"pid": None, "stopped": stopped, "last_started": st.get("started")}))
+    try:  # Bericht ueber die Laufzeit; darf das Pausieren nie verhindern
+        from tradingbot import report
+        report.save(report.build(bot_id, LABELS.get(bot_id, bot_id), data, st.get("started"), stopped), data)
+    except Exception:
+        pass
     return status(bot_id)
 
 

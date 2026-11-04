@@ -7,86 +7,194 @@
 <script src="/vendor/lightweight-charts.js"></script>
 <style>
   :root {
-    --bg: #070b12; --panel: #0d1420; --line: #1b2636; --text: #d7e0ea; --muted: #8496ab;
-    --green: #22d39a; --red: #ff4d6d; --amber: #f5b942; --blue: #4da3ff;
+    --bg: #000; --bg2: #02070c; --panel: rgba(4, 12, 20, .72); --panel-solid: #03090f;
+    --line: rgba(62, 240, 255, .13); --line2: rgba(62, 240, 255, .34); --text: #d8f6ff; --muted: #6f8a9c;
+    --cyan: #3ef0ff; --green: #1dffa0; --red: #ff3b6b; --amber: #ffc04d; --blue: #3ef0ff; --violet: #8f7bff;
+    --glow: 0 0 18px rgba(0, 229, 255, .18);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Inter, system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-         font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding: 14px 20px 10px; }
-  .brand { font-weight: 700; letter-spacing: .08em; color: var(--muted); }
-  .brand b { color: var(--text); }
-  .badge { padding: 2px 8px; border: 1px solid var(--amber); color: var(--amber); border-radius: 4px; font-size: 11px; margin-left: 6px; }
-  select, button, input { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line);
-                          border-radius: 6px; padding: 5px 9px; }
-  button { cursor: pointer; }
-  button:hover, select:hover { border-color: var(--muted); }
-  button.on { border-color: var(--blue); color: var(--blue); }
-  :focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
-  .status { margin-left: auto; color: var(--muted); }
-  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; }
-  .dot.live { background: var(--green); box-shadow: 0 0 8px var(--green); }
-  .dot.stale { background: var(--red); }
-  .hero { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 28px; padding: 4px 20px 14px; border-bottom: 1px solid var(--line); }
-  .equity { font-size: 34px; line-height: 1.1; font-weight: 700; color: var(--green); }
-  .equity.neg { color: var(--red); }
-  .kpis { display: flex; gap: 10px 22px; flex-wrap: wrap; }
-  .kpi > span { display: block; color: var(--muted); font-size: 11px; letter-spacing: .03em; }
-  .kpi b { font-size: 15px; }
-  nav { display: flex; gap: 4px; padding: 0 16px; border-bottom: 1px solid var(--line); overflow-x: auto; }
-  nav button { background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 10px 12px; color: var(--muted); white-space: nowrap; }
-  nav button.on { color: var(--text); border-bottom-color: var(--blue); }
-  .tab { display: none; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 12px; padding: 12px; }
+  [hidden] { display: none !important; }
+  html { background: var(--bg); }
+  body { margin: 0; color: var(--text); font: 12.5px/1.5 var(--mono); min-height: 100vh;
+         background:
+           radial-gradient(1200px 600px at 85% -10%, rgba(0, 229, 255, .10), transparent 60%),
+           radial-gradient(900px 500px at -10% 110%, rgba(143, 123, 255, .08), transparent 60%),
+           linear-gradient(var(--bg2), var(--bg)) fixed; }
+  body::before { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .5;
+                 background-image: linear-gradient(rgba(0,229,255,.035) 1px, transparent 1px),
+                                   linear-gradient(90deg, rgba(0,229,255,.035) 1px, transparent 1px);
+                 background-size: 40px 40px; mask-image: radial-gradient(ellipse at center, #000 30%, transparent 80%); }
+  header, .hero, nav, main, footer { position: relative; z-index: 1; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding: 16px 22px 10px; }
+  .brand { font-weight: 800; letter-spacing: .28em; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+  .brand b { color: var(--cyan); text-shadow: 0 0 12px rgba(0,229,255,.6); }
+  .brand .core { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--cyan); box-shadow: 0 0 14px var(--cyan), inset 0 0 8px var(--cyan);
+                 position: relative; animation: breathe 3.2s ease-in-out infinite; }
+  .brand .core::after { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--cyan); opacity: .8; }
+  @keyframes breathe { 50% { box-shadow: 0 0 4px var(--cyan), inset 0 0 3px var(--cyan); } }
+  .badge { padding: 2px 9px; border: 1px solid rgba(255,192,77,.5); color: var(--amber); border-radius: 999px; font-size: 10px; letter-spacing: .12em; }
+  select, button, input { font: 11.5px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--text); background: rgba(8, 19, 31, .8); border: 1px solid var(--line2);
+                          border-radius: 4px; padding: 6px 11px; }
+  button { cursor: pointer; transition: border-color .15s, box-shadow .15s, color .15s; }
+  button:hover, select:hover { border-color: var(--cyan); box-shadow: var(--glow); }
+  button.on { border-color: var(--cyan); color: var(--cyan); }
+  :focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+  .status { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 7px; vertical-align: 1px; }
+  .dot.live { background: var(--green); box-shadow: 0 0 10px var(--green); animation: pulse 2s infinite; }
+  .dot.stale { background: var(--red); box-shadow: 0 0 10px var(--red); }
+  .hero { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 30px; margin: 4px 16px 12px; padding: 16px 20px;
+          border: 1px solid var(--line); border-radius: 6px; background: var(--panel); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  .equity { font: 700 38px/1.05 var(--mono); color: var(--green); text-shadow: 0 0 24px rgba(43,255,177,.35); letter-spacing: -.02em; }
+  .equity.neg { color: var(--red); text-shadow: 0 0 24px rgba(255,77,109,.35); }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px 18px; flex: 1; }
+  .kpi { border-left: 2px solid var(--line2); padding-left: 10px; }
+  .kpi > span { display: block; color: var(--muted); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; }
+  .kpi b { font: 600 15px var(--mono); }
+  nav { display: flex; gap: 6px; padding: 0 16px; overflow-x: auto; }
+  nav button { background: none; border: 1px solid transparent; border-radius: 4px; padding: 7px 14px; color: var(--muted);
+               white-space: nowrap; letter-spacing: .06em; }
+  nav button.on { color: var(--cyan); border-color: var(--line2); background: rgba(0,229,255,.07); box-shadow: var(--glow); }
+  .tab { display: none; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; padding: 14px 16px; align-items: start; }
   .tab.on { display: grid; }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; min-width: 0; }
-  .panel h2 { margin: 0 0 8px; font-size: 12px; font-weight: 600; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; }
-  .panel h2 small { color: var(--muted); font-weight: 400; }
-  .chart { height: 260px; }
-  .chart.tall { height: 420px; }
-  .chart.short { height: 150px; }
-  .wide { grid-column: 1 / -1; }
+  .panel { grid-column: span 6; position: relative; display: flex; flex-direction: column; min-width: 0;
+           background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px;
+           backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 10px 40px rgba(0,0,0,.35);
+           resize: vertical; overflow: hidden; animation: rise .35s ease both; }
+  .panel::before, .panel::after { content: ""; position: absolute; width: 14px; height: 14px; pointer-events: none; border-color: var(--cyan); opacity: .7; }
+  .panel::before { top: -1px; left: -1px; border-top: 2px solid; border-left: 2px solid; border-top-left-radius: 6px; }
+  .panel::after { bottom: -1px; right: -1px; border-bottom: 2px solid; border-right: 2px solid; border-bottom-right-radius: 6px; }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+  .panel[data-size="s"] { grid-column: span 4; } .panel[data-size="m"] { grid-column: span 6; }
+  .panel[data-size="l"] { grid-column: span 8; } .panel[data-size="xl"], .wide { grid-column: 1 / -1; }
+  .panel.wide[data-size="s"] { grid-column: span 4; } .panel.wide[data-size="m"] { grid-column: span 6; } .panel.wide[data-size="l"] { grid-column: span 8; }
+  .panel.collapsed { resize: none; height: auto !important; }
+  .panel.collapsed > :not(h2) { display: none !important; }
+  .panel h2 { margin: 0 0 10px; font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: var(--cyan);
+              display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; flex: none; }
+  .panel h2 small { color: var(--muted); font-weight: 400; letter-spacing: .02em; text-transform: none; font-size: 11px; }
+  .pctl { margin-left: auto; display: flex; gap: 4px; }
+  .pctl button { padding: 1px 7px; font-size: 11px; line-height: 18px; border-radius: 6px; color: var(--muted); border-color: var(--line); background: transparent; }
+  .pctl button:hover { color: var(--cyan); }
+  .chart { height: 260px; flex: 1 1 260px; min-height: 110px; }
+  .chart.tall { height: 420px; flex-basis: 420px; }
+  .chart.short { height: 160px; flex-basis: 160px; }
+  .tablewrap, .feed, pre.log { flex: 1 1 auto; min-height: 0; }
   .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
   .row .grow { margin-left: auto; }
   .pos { margin-top: 6px; color: var(--muted); min-height: 18px; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  tbody tr:hover td { background: rgba(0,229,255,.04); }
   th.l, td.l { text-align: left; }
-  th { color: var(--muted); font-weight: 500; font-size: 11px; }
+  th { color: var(--muted); font: 600 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
   .up { color: var(--green); } .down { color: var(--red); } .muted { color: var(--muted); }
-  .empty { color: var(--muted); padding: 20px; text-align: center; white-space: normal; }
-  .tablewrap { overflow-x: auto; }
+  .empty { color: var(--muted); padding: 22px; text-align: center; white-space: normal; }
+  .tablewrap { overflow: auto; }
   #key-stats td { white-space: normal; }
-  .feed { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; }
-  .feed li { display: flex; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--line); }
-  .feed time { color: var(--muted); flex: none; }
-  .hist { display: flex; align-items: flex-end; gap: 2px; height: 170px; }
+  .feed { list-style: none; margin: 0; padding: 0; max-height: 340px; overflow-y: auto; }
+  .feed li { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .feed time { color: var(--muted); flex: none; font-family: var(--mono); font-size: 11px; }
+  .hist { display: flex; align-items: flex-end; gap: 3px; height: 170px; }
   .hist div { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; }
-  .hist i { display: block; width: 100%; border-radius: 4px 4px 0 0; min-height: 1px; }
+  .hist i { display: block; width: 100%; border-radius: 4px 4px 0 0; min-height: 1px; box-shadow: 0 0 10px currentColor; }
   .hist span { font-size: 10px; color: var(--muted); }
   .axis { position: relative; display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-top: 4px; border-top: 1px solid var(--line); padding-top: 3px; }
   .note { color: var(--muted); margin: 8px 0 0; white-space: normal; }
   .warn { color: var(--amber); }
   .verdict { font-weight: 700; }
-  #ctl { font-weight: 700; padding: 6px 14px; }
-  #ctl.start { border-color: var(--green); color: var(--green); }
-  #ctl.stop { border-color: var(--amber); color: var(--amber); }
+  #ctl { font-weight: 700; padding: 7px 16px; letter-spacing: .1em; border-radius: 4px; }
+  #ctl.start { border-color: var(--green); color: var(--green); box-shadow: 0 0 16px rgba(43,255,177,.25); }
+  #ctl.stop { border-color: var(--amber); color: var(--amber); box-shadow: 0 0 16px rgba(255,192,77,.2); }
   #ctl[disabled] { opacity: .5; cursor: wait; }
   .phase { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
-  .phase .spin { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-right: 8px; animation: pulse 1.2s infinite; }
-  @keyframes pulse { 50% { opacity: .2; } }
-  pre.log { margin: 8px 0 0; max-height: 260px; overflow: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: 11px; white-space: pre-wrap; word-break: break-word; }
+  .phase .spin { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 12px var(--cyan); margin-right: 9px; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+  pre.log { margin: 8px 0 0; max-height: 280px; overflow: auto; background: rgba(0,0,0,.35); border: 1px solid var(--line); border-radius: 8px;
+            padding: 10px; font: 11px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; color: #a9c4d8; }
   details summary { cursor: pointer; color: var(--muted); margin-top: 8px; }
-  a { color: var(--blue); }
-  footer { padding: 0 20px 16px; color: var(--muted); font-size: 11px; }
+  a { color: var(--cyan); }
+  footer { padding: 4px 22px 18px; color: var(--muted); font-size: 11px; }
   footer a { color: var(--muted); }
-  @media (max-width: 520px) { header, .hero { padding-left: 16px; padding-right: 16px; } .tab { padding: 8px; } .equity { font-size: 28px; } .status { margin-left: 0; width: 100%; } }
+  /* Bericht */
+  .rep-bg { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px;
+            background: radial-gradient(circle at center, rgba(0,40,60,.55), rgba(0,0,0,.82)); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+            animation: fade .3s ease both; }
+  @keyframes fade { from { opacity: 0; } }
+  .rep { position: relative; width: min(860px, 100%); max-height: calc(100vh - 32px); overflow: auto; padding: 26px 28px 22px;
+         border: 1px solid var(--line2); border-radius: 8px; background: linear-gradient(160deg, rgba(2,14,22,.94), rgba(0,4,8,.97));
+         box-shadow: 0 0 60px rgba(0,229,255,.18), inset 0 0 60px rgba(0,229,255,.05); animation: pop .45s cubic-bezier(.2,.9,.3,1.2) both; }
+  @keyframes pop { from { opacity: 0; transform: scale(.94); } }
+  .rep::after { content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: 8px;
+                background: linear-gradient(transparent 0, rgba(0,229,255,.06) 50%, transparent 100%); background-size: 100% 6px; opacity: .35; }
+  .rep-head { display: flex; align-items: center; gap: 18px; margin-bottom: 18px; }
+  .rings { width: 74px; height: 74px; flex: none; }
+  .rings circle { fill: none; stroke: var(--cyan); transform-origin: 50% 50%; }
+  .rings .r1 { stroke-dasharray: 6 8; animation: spin 9s linear infinite; opacity: .8; }
+  .rings .r2 { stroke-dasharray: 40 20; animation: spin 5s linear infinite reverse; opacity: .55; }
+  .rings .r3 { fill: var(--cyan); stroke: none; opacity: .85; filter: drop-shadow(0 0 6px var(--cyan)); animation: breathe2 2.4s ease-in-out infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes breathe2 { 50% { opacity: .35; } }
+  .rep h3 { margin: 0; font-size: 12px; letter-spacing: .32em; color: var(--cyan); text-shadow: 0 0 12px rgba(0,229,255,.6); }
+  .rep h4 { margin: 18px 0 8px; font-size: 10px; letter-spacing: .22em; color: var(--muted); text-transform: uppercase; }
+  .rep .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .rep .big { font: 700 18px var(--mono); margin-top: 2px; letter-spacing: .04em; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .tile { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: rgba(0,229,255,.03); animation: rise .5s ease both; }
+  .tile span { display: block; font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+  .tile b { font: 700 20px var(--mono); }
+  .hl { list-style: none; margin: 0; padding: 0; }
+  .hl li { padding: 7px 0 7px 18px; position: relative; border-bottom: 1px solid var(--line); animation: type .4s ease both; }
+  .hl li::before { content: ""; position: absolute; left: 2px; top: 14px; width: 7px; height: 7px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+  @keyframes type { from { opacity: 0; transform: translateX(-8px); } }
+  .rep-foot { display: flex; gap: 8px; align-items: center; margin-top: 18px; }
+  .rep-foot .grow { margin-left: auto; }
+
+  /* Bericht: grosse leuchtende Zahl wie auf einem HUD */
+  .hud { position: relative; }
+  .hud-num { text-align: center; margin: 8px 0 4px; }
+  .hud-num b { display: inline-block; font: 700 clamp(40px, 9vw, 84px)/1 var(--mono); letter-spacing: -.02em; color: var(--cyan);
+               text-shadow: 0 0 18px rgba(62,240,255,.75), 0 0 48px rgba(62,240,255,.35); animation: glitch 3.5s infinite; }
+  .hud-num b.up { color: var(--green); text-shadow: 0 0 18px rgba(29,255,160,.7), 0 0 48px rgba(29,255,160,.3); }
+  .hud-num b.down { color: var(--red); text-shadow: 0 0 18px rgba(255,59,107,.7), 0 0 48px rgba(255,59,107,.3); }
+  .hud-num small { display: block; margin-top: 8px; color: var(--text); letter-spacing: .24em; font-size: 11px; text-transform: uppercase; opacity: .85; }
+  @keyframes glitch { 0%, 92%, 100% { transform: none; filter: none; } 93% { transform: translateX(-2px) skewX(-4deg); filter: hue-rotate(40deg); }
+                      95% { transform: translateX(2px); } 97% { transform: none; filter: brightness(1.6); } }
+  .hud-line { width: 100%; height: 70px; margin: 6px 0 4px; }
+  .hud-line path { fill: none; stroke: var(--cyan); stroke-width: 2; filter: drop-shadow(0 0 6px var(--cyan));
+                   stroke-dasharray: 2000; stroke-dashoffset: 2000; animation: draw 2.2s .3s ease-out forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  .floaters { position: absolute; inset: 0; pointer-events: none; overflow: hidden; border-radius: 8px; }
+  .floaters span { position: absolute; font: 700 13px var(--mono); padding: 2px 8px; border: 1px solid currentColor; background: rgba(0,0,0,.6);
+                   opacity: 0; animation: floatup 2.6s ease-out forwards; }
+  @keyframes floatup { 10% { opacity: 1; } 80% { opacity: .9; } to { opacity: 0; transform: translateY(-40px); } }
+  /* Start: leuchtender Kern */
+  #boot { position: fixed; inset: 0; z-index: 60; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; animation: bootout .5s 1.5s ease forwards; }
+  #boot p { margin: 0; text-align: center; color: var(--muted); letter-spacing: .4em; font-size: 11px; }
+  #boot svg { width: 150px; height: 150px; overflow: visible; }
+  #boot circle { fill: none; stroke: var(--cyan); transform-origin: 75px 75px; filter: drop-shadow(0 0 6px var(--cyan)); }
+  #boot .b1 { stroke-dasharray: 3 9; animation: spin 2.4s linear infinite, grow .9s ease-out both; }
+  #boot .b2 { stroke-dasharray: 90 40 10 40; stroke-width: 3; animation: spin 1.6s linear infinite reverse, grow .9s .15s ease-out both; }
+  #boot .b3 { stroke-dasharray: 260; stroke-dashoffset: 260; stroke-width: 2; animation: drawc 1.1s .2s ease-out forwards; }
+  #boot .b4 { fill: var(--cyan); stroke: none; animation: grow .6s .6s ease-out both, breathe2 1.2s 1.2s infinite; }
+  @keyframes grow { from { transform: scale(.3); opacity: 0; } }
+  @keyframes drawc { to { stroke-dashoffset: 0; } }
+  @keyframes bootout { to { opacity: 0; visibility: hidden; } }
+  @media (max-width: 900px) { .panel, .panel[data-size], .panel.wide[data-size] { grid-column: 1 / -1; } }
+  @media (max-width: 520px) { header { padding: 14px 16px 8px; } .hero { margin: 4px 8px 10px; } .tab { padding: 10px 8px; }
+                              .equity { font-size: 30px; } .status { margin-left: 0; width: 100%; } .rep { padding: 18px 16px; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
+<div id="boot" aria-hidden="true"><svg viewBox="0 0 150 150"><circle class="b1" cx="75" cy="75" r="70" stroke-width="2"/><circle class="b2" cx="75" cy="75" r="54"/><circle class="b3" cx="75" cy="75" r="41"/><circle class="b4" cx="75" cy="75" r="9"/></svg><p>TRADING BOT · SYSTEME WERDEN GELADEN</p></div>
 <header>
-  <div class="brand"><b>TRADING BOT</b><span class="badge">PAPER · SPIELGELD</span></div>
+  <div class="brand"><span class="core" aria-hidden="true"></span><b>TRADING BOT</b><span class="badge">PAPER · SPIELGELD</span></div>
   <select id="bot" aria-label="Bot auswählen"></select>
   <button id="ctl" hidden>▶ Bot starten</button>
+  <button id="reports-btn" title="Berichte nach dem Pausieren">◎ Berichte</button>
   <div class="status"><span class="dot" id="dot"></span><span id="status">verbinde…</span></div>
 </header>
 <div class="hero">
@@ -184,14 +292,14 @@
   <section class="panel wide"><h2>Im Test stark, aber nicht ausgewählt</h2><div class="tablewrap" id="copy-others"></div></section>
 </div>
 </main>
-<footer>Nur Paper Trading mit Spielgeld, keine Anlageberatung. Charts:
+<footer><a href="#" id="reset-layout">Anordnung zurücksetzen</a> · Nur Paper Trading mit Spielgeld, keine Anlageberatung. Charts:
   <a href="https://www.tradingview.com/">TradingView Lightweight Charts</a></footer>
 
 <script>
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const C = { bg: css('--panel'), line: css('--line'), text: css('--muted'), green: css('--green'), red: css('--red'),
             amber: css('--amber'), blue: css('--blue') };
-const base = { layout: { background: { color: C.bg }, textColor: C.text, fontFamily: 'ui-monospace, Menlo, monospace' },
+const base = { layout: { background: { color: 'transparent' }, textColor: C.text, fontFamily: 'ui-monospace, Menlo, monospace' },
                grid: { vertLines: { color: C.line }, horzLines: { color: C.line } },
                rightPriceScale: { borderColor: C.line }, timeScale: { borderColor: C.line, timeVisible: true },
                autoSize: true };
@@ -578,7 +686,8 @@ async function toggleBot() {
     const j = await r.json();
     if (j.error) $('act-detail').innerHTML = `<span class="warn">${esc(j.error)}</span>`;
   } catch (e) { $('act-detail').innerHTML = '<span class="warn">Dashboard-Server nicht erreichbar</span>'; }
-  ctlBusy = false; b.disabled = false; tick();
+  ctlBusy = false; b.disabled = false; await tick();
+  if (running && !(S.control || {}).running) openReport(true);
 }
 function renderActivity(s) {
   const a = s.activity, c = s.control || {}, panel = $('activity-panel');
@@ -649,6 +758,140 @@ async function tick() {
   } catch (e) { console.error(e); $('status').textContent = 'Anzeigefehler: ' + e.message; $('dot').className = 'dot stale'; }
 }
 
+
+// ---------- Bereiche groesser/kleiner, einklappen (wird pro Bereich gemerkt) ----------
+const SIZES = ['s', 'm', 'l', 'xl'], SIZE_NAME = { s: 'klein', m: 'mittel', l: 'groß', xl: 'volle Breite' };
+function panelKey(p) { const h = p.querySelector('h2'); return 'panel:' + (p.closest('.tab') || {}).id + ':' + (p.id || (h ? h.firstChild.textContent.trim() : '')); }
+function panelPrefs(p) { try { return JSON.parse(store(panelKey(p)) || '{}'); } catch (e) { return {}; } }
+function savePanel(p, patch) { store(panelKey(p), JSON.stringify({ ...panelPrefs(p), ...patch })); }
+function setupPanel(p) {
+  if (p.dataset.ready) return; p.dataset.ready = 1;
+  const h = p.querySelector('h2'); if (!h) return;
+  const prefs = panelPrefs(p), box = document.createElement('span');
+  box.className = 'pctl';
+  box.innerHTML = '<button data-a="size" title="Breite ändern">⇔</button><button data-a="fold" title="Einklappen">▾</button>';
+  h.appendChild(box);
+  if (prefs.size) p.dataset.size = prefs.size;
+  if (prefs.h) p.style.height = prefs.h + 'px';
+  if (prefs.fold) p.classList.add('collapsed');
+  const label = () => { box.firstChild.title = 'Breite: ' + SIZE_NAME[p.dataset.size || (p.classList.contains('wide') ? 'xl' : 'm')] + ' (klicken zum Ändern)';
+                        box.lastChild.textContent = p.classList.contains('collapsed') ? '▸' : '▾'; };
+  label();
+  box.addEventListener('click', e => {
+    const a = e.target.dataset.a; if (!a) return;
+    if (a === 'size') {
+      const cur = p.dataset.size || (p.classList.contains('wide') ? 'xl' : 'm');
+      p.dataset.size = SIZES[(SIZES.indexOf(cur) + 1) % SIZES.length]; savePanel(p, { size: p.dataset.size });
+    } else { p.classList.toggle('collapsed'); savePanel(p, { fold: p.classList.contains('collapsed') }); }
+    label();
+  });
+  h.addEventListener('dblclick', e => { if (!e.target.closest('.pctl')) box.lastChild.click(); });
+  let last = 0;  // Hoehe merken, wenn per Ziehen an der unteren rechten Ecke geaendert
+  new ResizeObserver(() => { if (p.style.height && !p.classList.contains('collapsed')) {
+    const hh = Math.round(p.getBoundingClientRect().height); if (Math.abs(hh - last) > 4) { last = hh; savePanel(p, { h: hh }); } } }).observe(p);
+}
+function resetLayout() {
+  try { Object.keys(localStorage).filter(k => k.startsWith('panel:')).forEach(k => localStorage.removeItem(k)); } catch (e) { /* egal */ }
+  document.querySelectorAll('.panel').forEach(p => { delete p.dataset.size; p.style.height = ''; p.classList.remove('collapsed'); delete p.dataset.ready;
+    const c = p.querySelector('.pctl'); if (c) c.remove(); setupPanel(p); });
+}
+const setupPanels = () => document.querySelectorAll('.panel').forEach(setupPanel);
+new MutationObserver(setupPanels).observe(document.querySelector('main'), { childList: true, subtree: true });
+
+// ---------- Bericht nach dem Pausieren ----------
+let reports = [], repIdx = 0;
+const dur = s => s == null ? '–' : s < 60 ? s + ' s' : s < 3600 ? Math.round(s / 60) + ' min' : (s / 3600).toFixed(1).replace('.', ',') + ' h';
+const when = t => t ? new Date(t).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : '?';
+async function openReport(fresh) {
+  try { reports = (await (await fetch('/api/reports?bot=' + encodeURIComponent(S.bot || botId || ''))).json()).reports || []; }
+  catch (e) { reports = []; }
+  repIdx = 0; renderReport(fresh);
+}
+function renderReport(fresh) {
+  closeReport();
+  const r = reports[repIdx], bg = document.createElement('div');
+  bg.className = 'rep-bg'; bg.id = 'rep-bg';
+  const tile = (k, v, cls = '', i = 0) => `<div class="tile" style="animation-delay:${.08 * i}s"><span>${k}</span><b class="${cls}">${v}</b></div>`;
+  let body;
+  if (!r) body = '<p class="muted">Noch kein Bericht. Ein Bericht entsteht jedes Mal, wenn du den Bot pausierst.</p>';
+  else {
+    const T = r.trading, L = r.learning, tiles = [tile('Laufzeit', dur(r.duration_s))];
+    if (T) tiles.push(tile('Trades', T.closed), tile('Treffer', T.closed ? T.wins + ' / ' + T.closed : '–', '', 2),
+                      tile('Konto', T.equity_end == null ? '–' : usd(T.equity_end), '', 3));
+    if (L) tiles.push(tile('Lernrunden', L.rounds, '', 1), tile('Neue Varianten', (L.tried_session || 0).toLocaleString('de-DE'), '', 2),
+                      tile('Insgesamt getestet', (L.tried_total || 0).toLocaleString('de-DE'), '', 3),
+                      tile('Suche', L.passed ? 'GEFUNDEN' : 'läuft weiter', L.passed ? 'up' : 'warn', 4));
+    if (r.log) tiles.push(tile('Fehler im Protokoll', r.log.errors, r.log.errors ? 'down' : 'up', 5));
+    const hl = (r.highlights || []).map((h, i) => `<li style="animation-delay:${.25 + .12 * i}s">${esc(h)}</li>`).join('');
+    let extra = '';
+    if (L && L.best) extra += `<h4>Beste Variante bisher</h4><div>${esc(L.best)}${L.best_holdout_r == null ? '' : ` · auf ungesehenen Daten ${signed(L.best_holdout_r, rFmt)}`}</div>`;
+    if (r.found) extra += `<h4>Fund</h4><div class="up">${esc(r.found.best)}: ${r.found.holdout.trades} Trades, ${signed(r.found.holdout.expectancy_r, rFmt)}, besser als ${pct(r.found.random_beaten)} Zufall. Nur Paper, du entscheidest.</div>`;
+    if (T && T.trades && T.trades.length) extra += '<h4>Trades</h4><div class="tablewrap">' + table([
+      { h: 'Zeit', l: 1, f: t => esc(when(t.time)) }, { h: 'Markt', l: 1, f: t => esc(t.symbol) },
+      { h: 'Grund', l: 1, f: t => esc(reasonName(t.reason)) }, { h: 'R', f: t => signed(+t.r_multiple, rFmt) }, { h: 'Gewinn', f: t => signed(+t.pnl, usd) }],
+      T.trades.slice().reverse(), '') + '</div>';
+    if (r.events && r.events.recent && r.events.recent.length) extra += '<h4>Ereignisse</h4><ul class="feed">' +
+      r.events.recent.slice().reverse().map(e => `<li><time>${esc(when(e.time))}</time><span>${esc(e.text)}</span></li>`).join('') + '</ul>';
+    if (r.log && r.log.last && r.log.last.length) extra += '<h4>Letzte Meldungen im Protokoll</h4><pre class="log">' + esc(r.log.last.join('\n')) + '</pre>';
+    let big = '', cls = '', sub = '', curve = [];
+    if (T && (T.closed || !L)) { big = T.pnl; cls = T.pnl > 0 ? 'up' : T.pnl < 0 ? 'down' : ''; curve = T.curve || [];
+      sub = `Ergebnis der Sitzung · Konto ${T.equity_end == null ? '–' : usd(T.equity_end)}`; }
+    else if (L) { big = L.tried_session || 0; sub = 'neue Strategie-Varianten getestet · ' + (L.passed ? 'Fund!' : 'noch kein Fund'); curve = L.curve || []; }
+    else big = null;
+    const hud = big == null ? '' : `<div class="hud"><div class="hud-num"><b class="${cls}" id="hud-big" data-v="${big}" data-kind="${T && (T.closed || !L) ? 'usd' : 'n'}">0</b><small>${esc(sub)}</small></div>` + spark(curve) + '</div>';
+    body = `${hud}<div class="tiles">${tiles.join('')}</div><h4>Zusammenfassung</h4><ul class="hl">${hl || '<li>Nichts Besonderes passiert</li>'}</ul>${extra}`;
+  }
+  bg.innerHTML = `<div class="rep" role="dialog" aria-modal="true" aria-label="Bericht">
+    <div class="rep-head"><svg class="rings" viewBox="0 0 100 100" aria-hidden="true"><circle class="r1" cx="50" cy="50" r="46" stroke-width="2"/>
+      <circle class="r2" cx="50" cy="50" r="34" stroke-width="3"/><circle class="r3" cx="50" cy="50" r="12"/></svg>
+      <div><h3>${fresh ? 'SITZUNG BEENDET' : 'SITZUNGSBERICHT'}</h3>
+      <div class="big">${r ? esc(r.label || r.bot) + ' pausiert' : 'Berichte'}</div>
+      <div class="sub">${r ? 'gelaufen ' + esc(when(r.started)) + ' bis ' + esc(when(r.stopped)) : ''}</div></div></div>
+    ${body}
+    <div class="rep-foot"><button data-r="prev" ${repIdx >= reports.length - 1 ? 'disabled' : ''}>◂ älter</button>
+      <button data-r="next" ${repIdx <= 0 ? 'disabled' : ''}>neuer ▸</button>
+      <span class="muted">${reports.length ? (repIdx + 1) + ' / ' + reports.length : ''}</span>
+      <button class="grow" data-r="close">Schließen</button></div></div>`;
+  document.body.appendChild(bg);
+  countUp($('hud-big'));
+  if (r && r.trading && r.trading.trades) floaters(bg.querySelector('.hud'), r.trading.trades.slice(-6));
+  bg.addEventListener('click', e => {
+    const a = e.target.dataset.r;
+    if (e.target === bg || a === 'close') closeReport();
+    else if (a === 'prev') { repIdx++; renderReport(); } else if (a === 'next') { repIdx--; renderReport(); }
+  });
+  bg.querySelector('[data-r="close"]').focus({ preventScroll: true }); bg.querySelector('.rep').scrollTop = 0;
+}
+
+function spark(vals) {
+  if (!vals || vals.length < 2) vals = [0, 0];
+  const lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1, n = vals.length - 1;
+  const d = vals.map((v, i) => `${i ? 'L' : 'M'}${(i / n * 1000).toFixed(1)},${(64 - (v - lo) / span * 56).toFixed(1)}`).join(' ');
+  return `<svg class="hud-line" viewBox="0 0 1000 70" preserveAspectRatio="none" aria-hidden="true"><path d="${d}"/></svg>`;
+}
+function countUp(el) {
+  if (!el) return;
+  const target = +el.dataset.v || 0, usdKind = el.dataset.kind === 'usd', t0 = performance.now(), ms = 1400;
+  const fmt = v => usdKind ? (v > 0 ? '+' : '') + v.toLocaleString('de-DE', { style: 'currency', currency: 'USD' }) : Math.round(v).toLocaleString('de-DE');
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = fmt(target); return; }
+  const step = now => { const k = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = fmt(target * e); if (k < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
+function floaters(box, trades) {
+  if (!box || !trades.length || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const f = document.createElement('div'); f.className = 'floaters'; box.appendChild(f);
+  trades.forEach((t, i) => { const sp = document.createElement('span'), v = +t.pnl || 0;
+    sp.textContent = `${v >= 0 ? '+' : ''}${v.toFixed(2)} $ ${t.symbol || ''}`; sp.style.color = v >= 0 ? 'var(--green)' : 'var(--red)';
+    sp.style.left = (i % 2 ? 62 + Math.random() * 18 : 4 + Math.random() * 16) + '%'; sp.style.top = (10 + Math.random() * 50) + '%'; sp.style.animationDelay = (0.6 + i * 0.45) + 's';
+    f.appendChild(sp); });
+}
+try { if (sessionStorage.getItem('boot')) $('boot').remove(); else { sessionStorage.setItem('boot', '1'); setTimeout(() => { const b = $('boot'); if (b) b.remove(); }, 2100); } }
+catch (e) { const b = $('boot'); if (b) b.remove(); }
+function closeReport() { const b = $('rep-bg'); if (b) b.remove(); }
+addEventListener('keydown', e => { if (e.key === 'Escape') closeReport(); });
+$('reports-btn').addEventListener('click', () => openReport(false));
+$('reset-layout').addEventListener('click', e => { e.preventDefault(); resetLayout(); });
 $('ctl').addEventListener('click', toggleBot);
 $('log-box').addEventListener('toggle', loadLog);
 $('nav').addEventListener('click', e => { if (e.target.dataset.tab) show(e.target.dataset.tab); });
@@ -662,7 +905,7 @@ $('coin-free').addEventListener('keydown', e => { if (e.key === 'Enter' && e.tar
 $('intervals').innerHTML = ['5m', '15m', '1h', '4h', '1d'].map(i => `<button data-i="${i}">${i}</button>`).join(' ');
 const markInterval = () => document.querySelectorAll('#intervals button').forEach(b => b.classList.toggle('on', b.dataset.i === interval));
 $('intervals').addEventListener('click', e => { if (e.target.dataset.i) { interval = e.target.dataset.i; store('interval', interval); markInterval(); loadLive(true); } });
-markInterval(); show(tab); tick(); setInterval(tick, 5000);
+markInterval(); setupPanels(); show(tab); tick(); setInterval(tick, 5000);
 </script>
 </body>
 </html>
