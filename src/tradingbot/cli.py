@@ -97,9 +97,9 @@ def cmd_traders(args, cfg):
 def cmd_learn(args, cfg):
     from tradingbot import bot
     from tradingbot.learning import research
+    import os
     every = args.every
     try:
-        import os
         os.nice(10)  # niedrige Prioritaet: Uni, Netflix usw. gehen vor
     except (AttributeError, OSError):
         pass
@@ -107,7 +107,8 @@ def cmd_learn(args, cfg):
           f"{len(cfg.markets)} Maerkte, {cfg.timeframe}-Kerzen, alle {every:g} h eine neue Runde. "
           f"Daten/Ergebnisse in {bot.DATA}")
     research.run(cfg, args.family, bot.DATA, every_hours=every, rounds=args.rounds, folds=args.folds,
-                 min_trades=args.min_trades or 20, n_new=args.new)
+                 min_trades=args.min_trades or 20, n_new=args.new,
+                 workers=args.workers if args.workers > 0 else max(1, (os.cpu_count() or 2) // 2))
 
 
 def cmd_status(args, cfg):
@@ -170,6 +171,7 @@ def main(argv=None):
                     help="ict = ICT/TJR-Scalping (Futures), momentum = Momentum/Volumen/RSI (Krypto)")
     sp.add_argument("--every", type=float, default=6, help="Stunden zwischen zwei Lernrunden")
     sp.add_argument("--new", type=int, default=24, help="neue Varianten pro Runde")
+    sp.add_argument("--workers", type=int, default=1, help="Prozessorkerne fuer die Suche (0 = die Haelfte, zwei Schleifen teilen sich den Rechner)")
     sp.add_argument("--rounds", type=int, help="Anzahl Runden (Standard: endlos)")
     sp.add_argument("--folds", type=int, default=4, help="Anzahl Testabschnitte im Walk-Forward")
     sp.add_argument("--min-trades", type=int, help="Mindest-Trades im Auswahlzeitraum (Standard 20)")

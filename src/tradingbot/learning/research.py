@@ -259,8 +259,39 @@ def _backtest_all(strat, frames, cfg) -> list[Trade]:
     return sorted(ts, key=lambda t: t.entry_time)
 
 
+_W: tuple | None = None
+
+
+def _init_worker(frames, cfg) -> None:
+    global _W
+    _W = (frames, cfg)
+    try:
+        import os
+        os.nice(5)
+    except (AttributeError, OSError):
+        pass
+
+
+def _score_worker(strat, args):
+    return _score(strat, _W[0], _W[1], *args)
+
+
+def _score(strat, frames, cfg, start, cut, min_trades, min_pf) -> tuple[str, dict]:
+    """Eine Variante auf dem Entdeckungsteil bewerten (inkl. gelerntem Filter)."""
+    try:
+        ts = _backtest_all(strat, frames, cfg)
+    except Exception as e:  # einzelne kaputte Parameter-Kombination ueberspringen
+        return repr(strat), {"ok": False, "error": str(e)[:80]}
+    filt = learn_filter(ts)
+    tf = [t for t in ts if filt(t.entry_time, t.atr_pct)]
+    st = stats([t.r_multiple for t in tf])
+    return repr(strat), {"ok": _ok(tf, start, cut, min_trades, min_pf), "exp": st["expectancy_r"],
+                         "trades": st["trades"], "pf": st["profit_factor"],
+                         "cls": type(strat).__name__, "params": strat.params}
+
+
 def explore(frames: dict[str, pd.DataFrame], cfg: Config, family: str, state_file: Path, n_new: int = 24,
-            min_trades: int = 20, min_pf: float = 1.2, seed: int | None = None) -> dict:
+            min_trades: int = 20, min_pf: float = 1.2, seed: int | None = None, workers: int = 1) -> dict:
     """Probiert n_new noch nie getestete Varianten auf dem Entdeckungs-Teil (erste 75 %).
     Die beste Variante aller bisherigen Versuche wird EINMAL auf dem zurueckgehaltenen Teil (letzte 25 %) geprueft.
     Je mehr verschiedene Varianten schon auf dem Holdout geprueft wurden, desto hoeher die Huerde
@@ -277,19 +308,20 @@ def explore(frames: dict[str, pd.DataFrame], cfg: Config, family: str, state_fil
     rng = np.random.default_rng(seed)
     base = [c for c in candidates(family) if repr(c) not in state["tried"]]
     new = base + sample_variants(family, n_new, set(state["tried"]) | {repr(b) for b in base}, rng)
-    for strat in new:
+    args = (start, cut, min_trades, min_pf)
+    if workers > 1 and len(new) > 1:
+        from concurrent.futures import ProcessPoolExecutor
         try:
-            ts = _backtest_all(strat, disc_frames, cfg)
-        except Exception as e:  # einzelne kaputte Parameter-Kombination ueberspringen
-            log.debug("%r: %s", strat, e)
-            state["tried"][repr(strat)] = {"ok": False, "error": str(e)[:80]}
-            continue
-        filt = learn_filter(ts)
-        tf = [t for t in ts if filt(t.entry_time, t.atr_pct)]
-        st = stats([t.r_multiple for t in tf])
-        state["tried"][repr(strat)] = {"ok": _ok(tf, start, cut, min_trades, min_pf), "exp": st["expectancy_r"],
-                                       "trades": st["trades"], "pf": st["profit_factor"],
-                                       "cls": type(strat).__name__, "params": strat.params}
+            with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker,
+                                     initargs=(disc_frames, cfg)) as ex:
+                scored = list(ex.map(_score_worker, new, [args] * len(new), chunksize=2))
+        except Exception as e:  # z. B. kein Multiprocessing moeglich: einfach nacheinander
+            log.warning("Parallel-Backtest nicht moeglich (%s), rechne nacheinander", e)
+            scored = [_score(st, disc_frames, cfg, *args) for st in new]
+    else:
+        scored = [_score(st, disc_frames, cfg, *args) for st in new]
+    for name, info in scored:
+        state["tried"][name] = info
     good = sorted(((k, v) for k, v in state["tried"].items() if v.get("ok")), key=lambda kv: -kv[1]["exp"])
     result = {"tried": len(state["tried"]), "new_this_round": len(new), "promising": len(good),
               "holdout_from": str(cut)[:16], "holdout_to": str(end)[:16], "best": None, "passed": False,
@@ -321,7 +353,7 @@ def explore(frames: dict[str, pd.DataFrame], cfg: Config, family: str, state_fil
 # ---------- Schleife ----------
 
 def run(cfg: Config, family: str, data_dir: Path, every_hours: float = 6, rounds: int | None = None,
-        folds: int = 4, min_trades: int = 20, fetch=None, n_new: int = 24) -> dict:
+        folds: int = 4, min_trades: int = 20, fetch=None, n_new: int = 24, workers: int = 1) -> dict:
     """fetch: optional {symbol: callable} fuer Tests. rounds=None: endlos."""
     out_dir = data_dir / "research"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -329,6 +361,7 @@ def run(cfg: Config, family: str, data_dir: Path, every_hours: float = 6, rounds
     n = 0
     res = {}
     last_best = [None, 0.0]
+    base_key = [None, None]
     while rounds is None or n < rounds:
         n += 1
         t0 = time.time()
@@ -346,10 +379,13 @@ def run(cfg: Config, family: str, data_dir: Path, every_hours: float = 6, rounds
         else:
             _write(status, {"phase": f"Runde {n}: teste {len(candidates(family))} Strategien auf {len(frames)} Maerkten",
                             "updated": _now(), "round": n})
-            res = evaluate(frames, cfg, family, folds=folds, min_trades=min_trades)
+            key = tuple((sym, len(df), str(df.index[-1])) for sym, df in sorted(frames.items()))
+            if key != base_key[0]:  # Grund-Test nur neu, wenn neue Kerzen da sind
+                base_key[:] = [key, evaluate(frames, cfg, family, folds=folds, min_trades=min_trades)]
+            res = dict(base_key[1])
             _write(status, {"phase": f"Runde {n}: probiert neue Varianten", "updated": _now(), "round": n})
             res["search"] = explore(frames, cfg, family, out_dir / "explored.json", n_new=n_new,
-                                    min_trades=min_trades)
+                                    min_trades=min_trades, workers=workers)
             res.update({"updated": _now(), "round": n, "seconds": round(time.time() - t0, 1),
                         "timeframe": cfg.timeframe, "start_capital": cfg.start_capital})
             _write(out_dir / "latest.json", res)

@@ -100,7 +100,7 @@ Zusaetzlich sucht jede Runde **neue Varianten** (zufaellige Parameter, bereits g
 Ausgewaehlt wird nur auf den ersten 75 % der Daten; die letzten 25 % dienen als Pruefung. Je mehr Varianten schon
 geprueft wurden, desto hoeher die Huerde gegen Zufall (90 %, 95 %, ... bis 99,5 %). Ein Fund wird gemeldet
 (Log, Telegram, Obsidian), aber nie automatisch gehandelt. Ueber den Knopf laufen die Schleifen mit 3 Minuten Pause
-und niedriger Prozess-Prioritaet.
+und niedriger Prozess-Prioritaet, je Schleife auf der Haelfte der Prozessorkerne und mit 120 neuen Varianten pro Runde.
 
 Optional: `OBSIDIAN_LOGBOOK=/Pfad/zur/Logbuch.md` in `.env` schreibt wichtige Ereignisse (Copy-Trades, Funde,
 Zwischenstaende der Suche) automatisch oben ins Obsidian-Logbuch.

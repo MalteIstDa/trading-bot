@@ -95,3 +95,14 @@ def test_search_tries_new_variants_each_round(tmp_path):
     assert len(tried) == b["tried"]
     if b["best"]:
         assert b["required"] >= 0.9 and b["holdout_from"] < b["holdout_to"]
+
+
+def test_search_parallel_matches_serial(tmp_path):
+    cfg = load_config()
+    cfg.markets = cfg.markets[:1]
+    frames = {cfg.markets[0]["symbol"]: synthetic(5000, 4).tz_localize("UTC")}
+    a = research.explore(frames, cfg, "momentum", tmp_path / "a.json", n_new=4, min_trades=3, seed=7, workers=1)
+    b = research.explore(frames, cfg, "momentum", tmp_path / "b.json", n_new=4, min_trades=3, seed=7, workers=2)
+    import json
+    assert json.loads((tmp_path / "a.json").read_text())["tried"] == json.loads((tmp_path / "b.json").read_text())["tried"]
+    assert a["best"] == b["best"]
