@@ -1,0 +1,41 @@
+# Krypto-Scalping-Lernschleife mit 5-Minuten-Kerzen von Binance (kostenlos, ab 2022):
+#   tradingbot learn --config config/crypto-scalp.yaml --family momentum
+# Testkonto 1000 $ (nur Spielgeld).
+mode: paper
+
+markets:               # source binance: Kerzen von Binance statt Yahoo
+  - {symbol: "BTCUSDT",  name: "Bitcoin",   source: binance, point_value: 1.0, lot_step: 0.00001}
+  - {symbol: "ETHUSDT",  name: "Ethereum",  source: binance, point_value: 1.0, lot_step: 0.0001}
+  - {symbol: "SOLUSDT",  name: "Solana",    source: binance, point_value: 1.0, lot_step: 0.01}
+  - {symbol: "BNBUSDT",  name: "BNB",       source: binance, point_value: 1.0, lot_step: 0.001}
+  - {symbol: "XRPUSDT",  name: "XRP",       source: binance, point_value: 1.0, lot_step: 0.1}
+  - {symbol: "DOGEUSDT", name: "Dogecoin",  source: binance, point_value: 1.0, lot_step: 1.0}
+  - {symbol: "ADAUSDT",  name: "Cardano",   source: binance, point_value: 1.0, lot_step: 1.0}
+  - {symbol: "AVAXUSDT", name: "Avalanche", source: binance, point_value: 1.0, lot_step: 0.01}
+  - {symbol: "LINKUSDT", name: "Chainlink", source: binance, point_value: 1.0, lot_step: 0.01}
+
+timeframe: "5m"
+history_period: "2022-01-01"   # bei source binance: ab diesem Datum
+
+account:
+  start_capital: 1000.0
+  fee_per_trade: 0.0
+  fee_pct: 0.1             # 0,1 % pro Kauf und pro Verkauf (Binance-Standard ohne Rabatt)
+  slippage_ticks: 0
+
+risk:
+  risk_per_trade_pct: 1.0
+  reward_risk: 3.0
+  atr_period: 14
+  sl_atr_mult: 1.5
+  max_daily_loss_pct: 5.0
+  max_open_positions: 3
+  exit_mode: fixed
+  trail_atr_mult: 3.0
+
+selection:
+  train_bars: 2000
+  test_bars: 500
+  min_trades: 30
+  min_profit_factor: 1.2
+  min_win_rate: 0.0

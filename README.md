@@ -105,6 +105,10 @@ und niedriger Prozess-Prioritaet, je Schleife auf der Haelfte der Prozessorkerne
 Optional: `OBSIDIAN_LOGBOOK=/Pfad/zur/Logbuch.md` in `.env` schreibt wichtige Ereignisse (Copy-Trades, Funde,
 Zwischenstaende der Suche) automatisch oben ins Obsidian-Logbuch.
 
+Krypto-Scalping mit 5-Minuten-Kerzen ab 2022 (kostenlos von Binance, erster Download einige Minuten, danach
+gespeichert in `data/crypto/raw/binance`):
+`tradingbot learn --family momentum --config config/crypto-scalp.yaml` (so startet es auch der Knopf).
+
 Im Dashboard (und in der Mac-App) laufen beide auch ueber den Start-Knopf in den Reitern Futures/Krypto;
 die Ergebnisse stehen im Reiter **Lernen**.
 

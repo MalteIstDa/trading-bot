@@ -116,6 +116,9 @@ def random_benchmark(frames: dict[str, pd.DataFrame], trades: list[Trade], cfg: 
     prepared = {}
     for sym, ts in by_market.items():
         df = frames[sym]
+        first = min(t.entry_time for t in ts)
+        pos = max(0, int(df.index.searchsorted(first)) - 500)  # Vorlauf fuer ATR, Rest davor unnoetig
+        df = df.iloc[pos:]
         hours = df.index.hour.to_numpy()
         pool = {h: np.nonzero(hours == h)[0] for h in {t.hour for t in ts}}
         prepared[sym] = (df, ts, pool)
@@ -296,11 +299,17 @@ def explore(frames: dict[str, pd.DataFrame], cfg: Config, family: str, state_fil
     Die beste Variante aller bisherigen Versuche wird EINMAL auf dem zurueckgehaltenen Teil (letzte 25 %) geprueft.
     Je mehr verschiedene Varianten schon auf dem Holdout geprueft wurden, desto hoeher die Huerde
     gegen Zufall (Bonferroni-Korrektur), damit viel Probieren nicht zu Glueckstreffern fuehrt."""
-    state = {"tried": {}, "holdout_checked": []}
+    fingerprint = f"{cfg.timeframe}|" + ",".join(sorted(frames))
+    state = {"tried": {}, "holdout_checked": [], "fingerprint": fingerprint}
     try:
-        state.update(json.loads(state_file.read_text()))
+        old = json.loads(state_file.read_text())
+        if old.get("fingerprint") == fingerprint or not old.get("tried"):
+            state.update(old)
+        else:  # andere Maerkte/Kerzen: neu anfangen, alten Stand aufheben
+            state_file.replace(state_file.with_name(f"explored-{int(time.time())}.json"))
     except (OSError, ValueError):
         pass
+    state["fingerprint"] = fingerprint
     start = min(df.index[0] for df in frames.values())
     end = max(df.index[-1] for df in frames.values())
     cut = start + (end - start) * (1 - HOLDOUT)
@@ -361,7 +370,7 @@ def run(cfg: Config, family: str, data_dir: Path, every_hours: float = 6, rounds
     n = 0
     res = {}
     last_best = [None, 0.0]
-    base_key = [None, None]
+    base_key = [None, None, 0.0]
     while rounds is None or n < rounds:
         n += 1
         t0 = time.time()
@@ -370,8 +379,12 @@ def run(cfg: Config, family: str, data_dir: Path, every_hours: float = 6, rounds
         for m in cfg.markets:
             sym = m["symbol"]
             try:
-                frames[sym] = update_archive(sym, cfg.timeframe, cfg.history_period, data_dir / "archive",
-                                             (fetch or {}).get(sym))
+                src = (fetch or {}).get(sym)
+                if src is None and m.get("source") == "binance":
+                    from tradingbot.data import binance
+                    src = (lambda s=sym: binance.history(s, cfg.timeframe, since=cfg.history_period,
+                                                         cache_dir=data_dir / "raw" / "binance"))
+                frames[sym] = update_archive(sym, cfg.timeframe, cfg.history_period, data_dir / "archive", src)
             except Exception as e:
                 log.warning("%s: %s", sym, e)
         if not frames:
@@ -379,9 +392,9 @@ def run(cfg: Config, family: str, data_dir: Path, every_hours: float = 6, rounds
         else:
             _write(status, {"phase": f"Runde {n}: teste {len(candidates(family))} Strategien auf {len(frames)} Maerkten",
                             "updated": _now(), "round": n})
-            key = tuple((sym, len(df), str(df.index[-1])) for sym, df in sorted(frames.items()))
-            if key != base_key[0]:  # Grund-Test nur neu, wenn neue Kerzen da sind
-                base_key[:] = [key, evaluate(frames, cfg, family, folds=folds, min_trades=min_trades)]
+            key = tuple(sorted(frames))
+            if key != base_key[0] or time.time() - base_key[2] > 6 * 3600:  # Grund-Test hoechstens alle 6 h
+                base_key[:] = [key, evaluate(frames, cfg, family, folds=folds, min_trades=min_trades), time.time()]
             res = dict(base_key[1])
             _write(status, {"phase": f"Runde {n}: probiert neue Varianten", "updated": _now(), "round": n})
             res["search"] = explore(frames, cfg, family, out_dir / "explored.json", n_new=n_new,
