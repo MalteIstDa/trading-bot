@@ -15,6 +15,6 @@ risk:
   atr_period: 14
   sl_atr_mult: 1.5
   max_daily_loss_pct: 6.0
-  max_open_positions: 2
+  max_open_positions: 5   # bis zu 5 kopierte Trades gleichzeitig (je Coin einer)
   exit_mode: fixed
   trail_atr_mult: 3.0
