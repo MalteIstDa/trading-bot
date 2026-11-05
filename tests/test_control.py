@@ -145,3 +145,15 @@ def test_learn_uses_power_each_round(monkeypatch, tmp_path):
     from tradingbot.config import load_config
     research.run(load_config(), "ict", tmp_path, rounds=1, use_power=True)
     assert any("Sparsam" in x for x in seen)
+
+
+def test_report_counts_search_restart(tmp_path):
+    import json
+    from tradingbot import report
+    (tmp_path / "research").mkdir()
+    (tmp_path / "research" / "history.jsonl").write_text("\n".join(json.dumps(h) for h in [
+        {"time": "2026-11-04T08:00:00+00:00", "search_tried": 8000},
+        {"time": "2026-11-04T10:00:00+00:00", "search_tried": 40},   # neue Suche (1h statt 5m)
+        {"time": "2026-11-04T11:00:00+00:00", "search_tried": 120}]))
+    rep = report.build("crypto", "Krypto", tmp_path, "2026-11-04T09:00:00+00:00", "2026-11-04T12:00:00+00:00")
+    assert rep["learning"]["tried_session"] == 120

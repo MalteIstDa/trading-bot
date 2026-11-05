@@ -103,10 +103,15 @@ def build(bot_id: str, label: str, data: Path, started: str | None, stopped: str
     if hist:
         first, last = hist[0], hist[-1]
         before = [h for h in _jsonl(data / "research" / "history.jsonl") if (_ts(h.get("time")) or t1) < (t0 or t1)]
-        tried0 = (before[-1].get("search_tried") or 0) if before else 0
+        prev = (before[-1].get("search_tried") or 0) if before else 0
+        session = 0
+        for h in hist:  # faellt der Zaehler (Suche neu begonnen, z. B. andere Kerzengroesse), zaehlt er ab 0 weiter
+            cur = h.get("search_tried") or 0
+            session += cur - prev if cur >= prev else cur
+            prev = cur
         rep["learning"] = {
             "rounds": len(hist), "tried_total": last.get("search_tried"),
-            "tried_session": (last.get("search_tried") or 0) - tried0,
+            "tried_session": session,
             "best": last.get("search_best"), "best_holdout_r": last.get("search_holdout_r"),
             "promising": last.get("search_promising"), "passed": any(h.get("search_passed") or h.get("passed") for h in hist),
             "bars": last.get("bars"), "oos": last.get("oos"), "random_beaten": last.get("random_beaten"),
