@@ -97,3 +97,51 @@ def test_stop_writes_report(tmp_path, monkeypatch):
     control.stop("demo")
     reps = list((tmp_path / "reports").glob("*.json"))
     assert len(reps) == 1 and json.loads(reps[0].read_text())["started"] == st["started"]
+
+
+def test_power_levels_and_endpoint(monkeypatch, tmp_path):
+    from tradingbot import power
+    from tradingbot.dashboard import server
+    f = tmp_path / "power.json"
+    monkeypatch.setattr(power, "FILE", f)
+    assert power.current()["level"] == "normal"  # ohne Datei
+    lv = power.levels()
+    assert lv["eco"]["workers"] == 1 and lv["max"]["workers"] >= lv["normal"]["workers"]
+    stamp = 0.0
+    assert power.set_level("eco")["workers"] == 1 and power.changed_since(stamp)
+    try:
+        power.set_level("turbo")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{httpd.server_address[1]}/api/power"
+    try:
+        req = urllib.request.Request(url, data=json.dumps({"level": "max"}).encode(), headers={"X-Trading-Bot": "1"})
+        with urllib.request.urlopen(req) as r:
+            assert json.loads(r.read())["current"]["level"] == "max"
+        with urllib.request.urlopen(url) as r:
+            assert json.loads(r.read())["current"]["level"] == "max"
+        req = urllib.request.Request(url, data=json.dumps({"level": "eco"}).encode())
+        try:
+            urllib.request.urlopen(req)
+            raise AssertionError("ohne Header muss es abgelehnt werden")
+        except urllib.error.HTTPError as e:
+            assert e.code == 403
+    finally:
+        httpd.shutdown()
+
+
+def test_learn_uses_power_each_round(monkeypatch, tmp_path):
+    from tradingbot import power
+    from tradingbot.learning import research
+    monkeypatch.setattr(power, "FILE", tmp_path / "power.json")
+    power.set_level("eco")
+    seen = []
+    monkeypatch.setattr(research, "update_archive", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("offline")))
+    monkeypatch.setattr(research.log, "info", lambda msg, *a: seen.append(msg % a))
+    from tradingbot.config import load_config
+    research.run(load_config(), "ict", tmp_path, rounds=1, use_power=True)
+    assert any("Sparsam" in x for x in seen)

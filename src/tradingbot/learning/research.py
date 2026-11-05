@@ -362,8 +362,11 @@ def explore(frames: dict[str, pd.DataFrame], cfg: Config, family: str, state_fil
 # ---------- Schleife ----------
 
 def run(cfg: Config, family: str, data_dir: Path, every_hours: float = 6, rounds: int | None = None,
-        folds: int = 4, min_trades: int = 20, fetch=None, n_new: int = 24, workers: int = 1) -> dict:
-    """fetch: optional {symbol: callable} fuer Tests. rounds=None: endlos."""
+        folds: int = 4, min_trades: int = 20, fetch=None, n_new: int = 24, workers: int = 1,
+        use_power: bool = False) -> dict:
+    """fetch: optional {symbol: callable} fuer Tests. rounds=None: endlos.
+    use_power: Kerne, neue Varianten und Pause vor jeder Runde aus der Leistungsstufe (power.json) lesen."""
+    from tradingbot import power
     out_dir = data_dir / "research"
     out_dir.mkdir(parents=True, exist_ok=True)
     status = out_dir / "status.json"
@@ -374,6 +377,11 @@ def run(cfg: Config, family: str, data_dir: Path, every_hours: float = 6, rounds
     while rounds is None or n < rounds:
         n += 1
         t0 = time.time()
+        if use_power:
+            pw = power.current()
+            workers, n_new, every_hours = pw["workers"], pw["new"], pw["pause_min"] / 60
+            log.info("Leistungsstufe %s: %d Kerne, %d neue Varianten, %.1f Min. Pause", pw["label"], workers, n_new,
+                     pw["pause_min"])
         _write(status, {"phase": f"Runde {n}: lade und archiviere Kurse", "updated": _now(), "round": n})
         frames = {}
         for m in cfg.markets:
@@ -454,8 +462,13 @@ def run(cfg: Config, family: str, data_dir: Path, every_hours: float = 6, rounds
             break
         nxt = datetime.now(timezone.utc).timestamp() + every_hours * 3600
         _write(status, {"phase": "Wartet auf die nächste Lernrunde", "updated": _now(), "round": n,
-                        "next_round": datetime.fromtimestamp(nxt, timezone.utc).isoformat(timespec="seconds")})
-        time.sleep(every_hours * 3600)
+                        "next_round": datetime.fromtimestamp(nxt, timezone.utc).isoformat(timespec="seconds"),
+                        **({"power": power.current()["label"]} if use_power else {})})
+        waited_from = time.time()
+        while time.time() < nxt:  # neue Leistungsstufe beendet die Pause sofort
+            time.sleep(min(2.0, max(0.0, nxt - time.time())))
+            if use_power and power.changed_since(waited_from):
+                break
     return res
 
 

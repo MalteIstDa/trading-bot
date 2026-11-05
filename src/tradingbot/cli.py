@@ -104,11 +104,18 @@ def cmd_learn(args, cfg):
     except (AttributeError, OSError):
         pass
     print(f"Lernschleife: Familie {args.family}, {len(research.candidates(args.family))} Strategien, "
-          f"{len(cfg.markets)} Maerkte, {cfg.timeframe}-Kerzen, alle {every:g} h eine neue Runde. "
+          f"{len(cfg.markets)} Maerkte, {cfg.timeframe}-Kerzen. "
           f"Daten/Ergebnisse in {bot.DATA}")
-    research.run(cfg, args.family, bot.DATA, every_hours=every, rounds=args.rounds, folds=args.folds,
-                 min_trades=args.min_trades or 20, n_new=args.new,
-                 workers=args.workers if args.workers > 0 else max(1, (os.cpu_count() or 2) // 2))
+    use_power = args.every is None and args.new is None and args.workers is None
+    if use_power:
+        from tradingbot import power
+        pw = power.current()
+        print(f"Leistungsstufe {pw['label']} (im Dashboard aenderbar): {pw['hint']}")
+    research.run(cfg, args.family, bot.DATA, every_hours=6 if every is None else every, rounds=args.rounds,
+                 folds=args.folds, min_trades=args.min_trades or 20, n_new=args.new or 24,
+                 workers=1 if args.workers is None else (args.workers if args.workers > 0
+                                                         else max(1, (os.cpu_count() or 2) // 2)),
+                 use_power=use_power)
 
 
 def cmd_data_cost(args, cfg):
@@ -189,9 +196,9 @@ def main(argv=None):
     sp = sub.add_parser("learn", parents=[common], help="Dauer-Lernschleife: Strategien immer wieder ehrlich testen")
     sp.add_argument("--family", choices=["ict", "momentum", "all"], default="ict",
                     help="ict = ICT/TJR-Scalping (Futures), momentum = Momentum/Volumen/RSI (Krypto)")
-    sp.add_argument("--every", type=float, default=6, help="Stunden zwischen zwei Lernrunden")
-    sp.add_argument("--new", type=int, default=24, help="neue Varianten pro Runde")
-    sp.add_argument("--workers", type=int, default=1, help="Prozessorkerne fuer die Suche (0 = die Haelfte, zwei Schleifen teilen sich den Rechner)")
+    sp.add_argument("--every", type=float, help="Stunden zwischen zwei Lernrunden (ohne --every/--new/--workers gilt die Leistungsstufe)")
+    sp.add_argument("--new", type=int, help="neue Varianten pro Runde")
+    sp.add_argument("--workers", type=int, help="Prozessorkerne fuer die Suche (0 = die Haelfte, zwei Schleifen teilen sich den Rechner)")
     sp.add_argument("--rounds", type=int, help="Anzahl Runden (Standard: endlos)")
     sp.add_argument("--folds", type=int, default=4, help="Anzahl Testabschnitte im Walk-Forward")
     sp.add_argument("--min-trades", type=int, help="Mindest-Trades im Auswahlzeitraum (Standard 20)")

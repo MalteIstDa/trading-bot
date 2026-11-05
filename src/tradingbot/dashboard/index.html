@@ -41,6 +41,8 @@
   button:hover, select:hover { border-color: var(--cyan); box-shadow: var(--glow); }
   button.on { border-color: var(--cyan); color: var(--cyan); }
   :focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+  .power { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
+  #power-hint { font-size: 11px; max-width: 320px; }
   .status { margin-left: auto; color: var(--muted); font-size: 12px; }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 7px; vertical-align: 1px; }
   .dot.live { background: var(--green); box-shadow: 0 0 10px var(--green); animation: pulse 2s infinite; }
@@ -195,6 +197,9 @@
   <select id="bot" aria-label="Bot auswählen"></select>
   <button id="ctl" hidden>▶ Bot starten</button>
   <button id="reports-btn" title="Berichte nach dem Pausieren">◎ Berichte</button>
+  <label class="power" title="Wie viel Rechenleistung die Lernschleifen nutzen dürfen. Gilt ab der nächsten Runde, startet nichts.">
+    <span>⚡ Leistung</span><select id="power" aria-label="Leistung der Lernschleifen"></select></label>
+  <span class="muted" id="power-hint"></span>
   <div class="status"><span class="dot" id="dot"></span><span id="status">verbinde…</span></div>
 </header>
 <div class="hero">
@@ -892,6 +897,24 @@ function closeReport() { const b = $('rep-bg'); if (b) b.remove(); }
 addEventListener('keydown', e => { if (e.key === 'Escape') closeReport(); });
 $('reports-btn').addEventListener('click', () => openReport(false));
 $('reset-layout').addEventListener('click', e => { e.preventDefault(); resetLayout(); });
+
+// ---------- Leistungsstufe der Lernschleifen ----------
+async function loadPower() {
+  try {
+    const j = await (await fetch('/api/power')).json(), sel = $('power');
+    sel.innerHTML = Object.entries(j.levels).map(([k, v]) => `<option value="${k}">${esc(v.label)} · ${v.workers} ${v.workers === 1 ? 'Kern' : 'Kerne'}</option>`).join('');
+    sel.value = j.current.level; $('power-hint').textContent = j.current.hint;
+  } catch (e) { /* Server kennt die Stufe evtl. noch nicht */ }
+}
+$('power').addEventListener('change', async e => {
+  try {
+    const r = await fetch('/api/power', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Trading-Bot': '1' },
+                                          body: JSON.stringify({ level: e.target.value }) });
+    const j = await r.json();
+    $('power-hint').textContent = j.error ? j.error : j.current.hint + ' · gilt ab der nächsten Runde';
+  } catch (err) { $('power-hint').textContent = 'Dashboard-Server nicht erreichbar'; }
+});
+loadPower();
 $('ctl').addEventListener('click', toggleBot);
 $('log-box').addEventListener('toggle', loadLog);
 $('nav').addEventListener('click', e => { if (e.target.dataset.tab) show(e.target.dataset.tab); });

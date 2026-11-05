@@ -204,6 +204,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json(control.status(q.get("bot") or current_bot() or ""))
         elif url.path == "/api/log":
             self._json({"lines": control.log_tail(q.get("bot") or current_bot() or "", 120)})
+        elif url.path == "/api/power":
+            from tradingbot import power
+            self._json({"current": power.current(), "levels": power.levels()})
         elif url.path == "/api/reports":
             from tradingbot import report
             b = q.get("bot") or current_bot() or ""
@@ -234,12 +237,15 @@ class Handler(BaseHTTPRequestHandler):
             raw = self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 10_000))
         except (ValueError, OSError):
             raw = b""
-        if url.path not in ("/api/control/start", "/api/control/stop"):
+        if url.path not in ("/api/control/start", "/api/control/stop", "/api/power"):
             return self._send(404, b"not found", "text/plain")
         if not self._local_request():
             return self._json({"error": "nicht erlaubt"}, 403)
         try:
             body = json.loads(raw or b"{}")
+            if url.path == "/api/power":
+                from tradingbot import power
+                return self._json({"current": power.set_level(str(body.get("level") or "")), "levels": power.levels()})
             bot_id = str(body.get("bot") or current_bot() or "")
             fn = control.start if url.path.endswith("start") else control.stop
             self._json(fn(bot_id))
