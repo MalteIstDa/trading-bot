@@ -287,6 +287,28 @@ def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m", rescan_hou
                                 "opened": owner.get(coin, {}).get("opened", "")})
                 _event("close", close_label(closed) + " (live)")
 
+    def manual_closes():
+        """Im Dashboard auf "Schliessen" gedrueckt: zum aktuellen Kurs schliessen."""
+        from tradingbot.traders import manual
+        for coin in manual.take(_dir()):
+            if coin not in broker.open_positions():
+                continue
+            px = (live.mids.get(coin) if live else None) or live_prices.get(coin)
+            if px is None:
+                try:
+                    px = float(candles_15m(coin)["close"].iloc[-1])
+                except Exception as e:
+                    log.warning("%s Kurs fuer manuelles Schliessen: %s", coin, e)
+                    manual.request(_dir(), coin)  # spaeter nochmal versuchen
+                    continue
+            closed = broker.close(coin, float(px), "manual")
+            if closed:
+                bot._log_trade({**closed, "trader": owner.get(coin, {}).get("trader", ""),
+                                "opened": owner.get(coin, {}).get("opened", "")})
+                _event("close", f"{coin}: von dir manuell geschlossen | {closed['pnl']:+.2f} $ "
+                                f"({closed['r_multiple']:+.2f}R) | Konto {closed['equity']:.2f} $")
+                write_live()
+
     def write_live():
         if live is None:
             return
@@ -413,6 +435,7 @@ def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m", rescan_hou
                         _event("close", f"{coin}: Trader ist ausgestiegen, wir auch | {closed['pnl']:+.2f} $ "
                                         f"({closed['r_multiple']:+.2f}R) | Konto {closed['equity']:.2f} $")
             time.sleep(0.3)
+        manual_closes()
         # SL/TP pruefen: nur abgeschlossene 1m-Kerzen nach dem Einstieg, jede nur einmal
         for coin in list(broker.open_positions()):
             _status(f"Prüfe Stop-Loss und Take-Profit für {coin}", loop=loop, equity=broker.equity(),
@@ -488,6 +511,7 @@ def watch(cfg: Config, poll_seconds: int = 60, interval: str = "15m", rescan_hou
                 ev = None
             if ev and ev[0] == "mids":
                 on_live_prices()
+                manual_closes()
             elif ev and ev[0] == "fill":
                 if not traded:
                     log.info("Live: %s hat gerade gehandelt (%s)", _short(ev[1] or "?"), ", ".join(ev[2][:3]))

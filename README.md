@@ -120,6 +120,10 @@ Weitere Regeln der Suche:
 Im Dashboard (und in der Mac-App) laufen beide auch ueber den Start-Knopf in den Reitern Futures/Krypto;
 die Ergebnisse stehen im Reiter **Lernen**.
 
+Offene Copy-Positionen kannst du im Dashboard unter **Offene Positionen** selbst schliessen: auf **Schliessen** und
+dann **Wirklich?** druecken. Der laufende Copy-Bot schliesst sie innerhalb von etwa einer Sekunde zum aktuellen Kurs
+(Spielgeld); im Verlauf steht dann "von dir manuell geschlossen". Bis zu 5 Positionen gleichzeitig, je Coin eine.
+
 ### Mac-App mit Start/Pause-Knopf
 
 ```bash

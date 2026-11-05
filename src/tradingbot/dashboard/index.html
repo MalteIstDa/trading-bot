@@ -78,6 +78,8 @@
               display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; flex: none; }
   .panel h2 small { color: var(--muted); font-weight: 400; letter-spacing: .02em; text-transform: none; font-size: 11px; }
   .pctl { margin-left: auto; display: flex; gap: 4px; }
+  .close-pos { padding: 2px 10px; font-size: 12px; border-radius: 6px; border: 1px solid var(--red); color: var(--red); background: transparent; }
+  .close-pos:hover, .close-pos.armed { background: rgba(255,59,107,.15); box-shadow: 0 0 12px rgba(255,59,107,.35); }
   .pctl button { padding: 1px 7px; font-size: 11px; line-height: 18px; border-radius: 6px; color: var(--muted); border-color: var(--line); background: transparent; }
   .pctl button:hover { color: var(--cyan); }
   .chart { height: 260px; flex: 1 1 260px; min-height: 110px; }
@@ -320,7 +322,7 @@ const signCls = v => v > 0 ? 'up' : v < 0 ? 'down' : '';
 const signed = (v, f = usd) => v == null ? '–' : `<span class="${signCls(v)}">${v > 0 ? '+' : ''}${f(v)}</span>`;
 const rFmt = v => v == null ? '–' : num(v) + ' R';
 const short = a => a && a.length > 12 ? a.slice(0, 6) + '…' + a.slice(-4) : (a || '–');
-const REASON = { tp: 'Ziel (TP)', sl: 'Stop (SL)', trail: 'Trailing Stop', time: 'Zeit-Ausstieg', end: 'Testende', trader_exit: 'Trader ausgestiegen', manual: 'Manuell' };
+const REASON = { tp: 'Ziel (TP)', sl: 'Stop (SL)', trail: 'Trailing Stop', time: 'Zeit-Ausstieg', end: 'Testende', trader_exit: 'Trader ausgestiegen', manual: 'Von dir geschlossen' };
 const reasonName = r => REASON[r] || r;
 const toTime = iso => Math.floor(Date.parse(iso) / 1000);
 const coinOf = s => String(s).replace(/-USD$/, '');
@@ -487,7 +489,11 @@ function renderOverview(s) {
     { h: 'Richtung', l: 1, f: r => `<span class="${r.side > 0 ? 'up' : 'down'}">${r.side > 0 ? 'LONG' : 'SHORT'}</span>` },
     { h: 'Einstieg', f: r => price(r.entry) }, { h: 'Kurs', f: r => price(r.last) },
     { h: 'SL', f: r => price(r.stop_loss) }, { h: 'TP', f: r => r.take_profit == null ? 'Trailing' : price(r.take_profit) },
-    { h: 'Offen', f: r => signed(r.unrealized) }], open, 'Keine offenen Positionen');
+    { h: 'Offen', f: r => signed(r.unrealized) },
+    ...(S.bot === 'copy' && (S.control || {}).running ? [{ h: '', f: r => closing.has(r.sym) ? '<span class="muted">schließe…</span>'
+      : `<button class="close-pos" data-coin="${esc(r.sym)}" title="Zum aktuellen Kurs schließen (Spielgeld)">Schließen</button>` }] : [])],
+    open, 'Keine offenen Positionen');
+  for (const c of [...closing]) if (!open.some(r => r.sym === c)) closing.delete(c);
 
   const ev = s.events || [];
   $('feed').innerHTML = ev.length ? ev.map(e => `<li><time>${e.time ? new Date(e.time).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}</time><span>${esc(e.text)}</span></li>`).join('')
@@ -682,6 +688,24 @@ function renderControl(s) {
   b.textContent = c.running ? '⏸ Pausieren' : '▶ ' + (c.label || 'Bot') + ' starten';
   b.title = c.running ? `läuft seit ${c.started ? new Date(c.started).toLocaleString('de-DE') : '?'}` : 'Startet das Kopieren mit Spielgeld';
 }
+const closing = new Set();
+$('open').addEventListener('click', async e => {
+  const b = e.target.closest('.close-pos');
+  if (!b) return;
+  const coin = b.dataset.coin;
+  if (b.dataset.armed !== '1') {  // erster Klick: nachfragen, ohne Browser-Dialog
+    b.dataset.armed = '1'; b.textContent = 'Wirklich?'; b.classList.add('armed');
+    setTimeout(() => { if (b.isConnected) { b.dataset.armed = ''; b.textContent = 'Schließen'; b.classList.remove('armed'); } }, 4000);
+    return;
+  }
+  closing.add(coin); b.disabled = true; b.textContent = 'schließe…';
+  try {
+    const j = await (await fetch('/api/close', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Trading-Bot': '1' },
+      body: JSON.stringify({ coin }) })).json();
+    if (j.error) { closing.delete(coin); $('act-detail').innerHTML = `<span class="warn">${esc(j.error)}</span>`; }
+  } catch (err) { closing.delete(coin); $('act-detail').innerHTML = '<span class="warn">Dashboard-Server nicht erreichbar</span>'; }
+  setTimeout(tick, 1500);
+});
 async function toggleBot() {
   const running = (S.control || {}).running, b = $('ctl');
   ctlBusy = true; b.disabled = true; b.textContent = running ? 'pausiere…' : 'starte…';

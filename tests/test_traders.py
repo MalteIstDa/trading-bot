@@ -200,3 +200,69 @@ def test_live_feed_handles_prices_and_fills():
     assert feed.events.empty()  # alte Fills beim Verbinden ignorieren
     feed._handle({"channel": "userFills", "data": {"user": "0xabc", "fills": [{"coin": "ETH"}]}})
     assert feed.events.get_nowait() == ("fill", "0xabc", ["ETH"])
+
+
+def test_manual_close_from_dashboard(monkeypatch, tmp_path):
+    from tradingbot import bot
+    from tradingbot.traders import manual, runner
+    monkeypatch.setattr(bot, "DATA", tmp_path)
+    monkeypatch.setattr(bot, "STATE_FILE", tmp_path / "state.json")
+    monkeypatch.setattr(bot, "TRADES_CSV", tmp_path / "trades.csv")
+    monkeypatch.setattr(bot, "write_dashboard", lambda *a, **k: None)
+    monkeypatch.setattr(runner.time, "sleep", lambda s: None)
+    (tmp_path / "traders").mkdir()
+    (tmp_path / "traders" / "selected.json").write_text(json.dumps(
+        {"created": runner._now_ms(), "traders": [{"address": "0xgood", "t_stat": 3}]}))
+    calls = []
+
+    def positions(a):
+        calls.append(a)
+        if len(calls) == 3:  # waehrend Runde 3 drueckt jemand im Dashboard auf "Schliessen"
+            manual.request(tmp_path / "traders", "BTC")
+            manual.request(tmp_path / "traders", "ETH")  # nicht offen: wird ignoriert
+        return {} if len(calls) == 1 else {"BTC": {"size": 1.0, "entry": 100}}
+
+    monkeypatch.setattr(hl, "positions", positions)
+    monkeypatch.setattr(hl, "size_decimals", lambda: {"BTC": 5})
+    monkeypatch.setattr(hl, "candles", lambda coin, iv, s, e=None: _trending_candles(300, s))
+    cfg = Config(start_capital=1000, fee_pct=0.045, risk=RiskConfig(risk_per_trade_pct=2))
+    runner.watch(cfg, poll_seconds=0, rescan_hours=0, max_loops=3)
+    rows = (tmp_path / "trades.csv").read_text().splitlines()
+    assert len(rows) == 2 and "manual" in rows[1]
+    assert manual.pending(tmp_path / "traders") == []
+    assert any("manuell geschlossen" in e["text"] for e in runner.recent_events())
+
+
+def test_close_endpoint_checks_position_and_bot(monkeypatch, tmp_path):
+    import threading
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+    from tradingbot import control
+    from tradingbot.dashboard import server
+    from tradingbot.traders import manual
+    monkeypatch.setitem(server.BOTS, "copy", ("Copy-Trading", tmp_path))
+    (tmp_path / "paper_state.json").write_text(json.dumps({"equity": 20, "positions": {"ETH": {}}}))
+    running = {"v": False}
+    monkeypatch.setattr(control, "status", lambda b: {"running": running["v"]})
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{httpd.server_address[1]}/api/close"
+
+    def post(coin, headers={"X-Trading-Bot": "1"}):
+        req = urllib.request.Request(url, data=json.dumps({"coin": coin}).encode(), headers=headers)
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    try:
+        assert post("ETH", {})[0] == 403
+        assert "laeuft nicht" in post("ETH")[1]["error"]
+        running["v"] = True
+        assert "nicht offen" in post("BTC")[1]["error"]
+        assert post("../x")[0] == 400
+        code, body = post("ETH")
+        assert code == 200 and body["queued"] == ["ETH"] and manual.pending(tmp_path / "traders") == ["ETH"]
+    finally:
+        httpd.shutdown()

@@ -237,7 +237,7 @@ class Handler(BaseHTTPRequestHandler):
             raw = self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 10_000))
         except (ValueError, OSError):
             raw = b""
-        if url.path not in ("/api/control/start", "/api/control/stop", "/api/power"):
+        if url.path not in ("/api/control/start", "/api/control/stop", "/api/power", "/api/close"):
             return self._send(404, b"not found", "text/plain")
         if not self._local_request():
             return self._json({"error": "nicht erlaubt"}, 403)
@@ -246,11 +246,27 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/power":
                 from tradingbot import power
                 return self._json({"current": power.set_level(str(body.get("level") or "")), "levels": power.levels()})
+            if url.path == "/api/close":
+                return self._json(self._close(body))
             bot_id = str(body.get("bot") or current_bot() or "")
             fn = control.start if url.path.endswith("start") else control.stop
             self._json(fn(bot_id))
         except Exception as e:
             self._json({"error": str(e)}, 400)
+
+    def _close(self, body: dict) -> dict:
+        """Manuelles Schliessen einer Copy-Position (Spielgeld). Der laufende Copy-Bot fuehrt es aus."""
+        from tradingbot.traders import manual
+        coin = str(body.get("coin") or "")
+        if not COIN_RE.match(coin):
+            raise ValueError("Ungueltiger Coin")
+        d = data_dir("copy")
+        state = _read_json(d / "paper_state.json", {}) or {}
+        if coin not in (state.get("positions") or {}):
+            raise ValueError(f"{coin} ist nicht offen")
+        if not control.status("copy").get("running"):
+            raise ValueError("Der Copy-Bot laeuft nicht. Starte ihn, dann wird die Position geschlossen.")
+        return {"queued": manual.request(d / "traders", coin)}
 
     def log_message(self, *args):  # keine Log-Flut im Terminal
         pass
