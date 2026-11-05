@@ -25,7 +25,7 @@ class Trade:
     contracts: float
     pnl: float
     r_multiple: float     # Ergebnis in Vielfachen des Risikos (Verlust = -1R, Ziel = +3R)
-    reason: str           # "tp", "sl", "trail" oder "end"
+    reason: str           # "tp", "sl", "trail", "time" oder "end"
     hour: int
     atr_pct: float        # Volatilitaet beim Einstieg
 
@@ -58,7 +58,10 @@ def run_backtest(df: pd.DataFrame, strategy: Strategy, cfg: Config, symbol: str 
         # 1) Einstieg zur Eroeffnung, falls Signal auf vorheriger Bar
         if pos is None and sig[i - 1] != 0:
             atr_pct = a[i - 1] / c[i - 1] * 100 if c[i - 1] else 0.0
-            if trade_filter is None or trade_filter(idx[i], atr_pct):
+            stop_pct = atr_pct * (cfg.risk.trail_atr_mult if cfg.risk.exit_mode == "trailing" else cfg.risk.sl_atr_mult)
+            too_tight = cfg.risk.min_stop_cost_mult > 0 and cfg.fee_pct > 0 and \
+                stop_pct < cfg.risk.min_stop_cost_mult * 2 * cfg.fee_pct  # Gebuehren wuerden den Trade auffressen
+            if not too_tight and (trade_filter is None or trade_filter(idx[i], atr_pct)):
                 entry = o[i] + sig[i - 1] * slip
                 plan = rm.plan(sig[i - 1], entry, a[i - 1], equity, point_value, 0, lot_step)
                 if plan:
@@ -67,6 +70,8 @@ def run_backtest(df: pd.DataFrame, strategy: Strategy, cfg: Config, symbol: str 
         if pos is not None:
             plan, ei, atr_pct = pos
             res = plan.check_exit(h[i], l[i])
+            if not res and cfg.risk.max_bars and i - ei + 1 >= cfg.risk.max_bars:
+                res = ("time", c[i])  # Zeit-Ausstieg zum Schlusskurs
             last = i == len(df) - 1
             if res or last:
                 reason, exit_px = res if res else ("end", c[i])

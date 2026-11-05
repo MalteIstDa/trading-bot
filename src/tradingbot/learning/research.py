@@ -232,7 +232,43 @@ def _space(cls) -> dict:
     return out
 
 
-def sample_variants(family: str, n: int, tried: set, rng) -> list[Strategy]:
+class WithExit(Strategy):
+    """Eine Einstiegs-Strategie mit eigenem Ausstieg (statt des Standard-Ausstiegs aus der Config).
+    So lernt die Suche auch, WIE man aussteigt: Chance-Risiko, Stop-Abstand, Trailing Stop, Zeit-Ausstieg."""
+
+    def __init__(self, inner: Strategy, rr: float = 3.0, sl: float = 1.5, mode: str = "fixed", max_bars: int = 0):
+        super().__init__(**inner.params)
+        self.inner, self.name = inner, inner.name
+        self.exit = {"rr": rr, "sl": sl, "mode": mode, "max_bars": max_bars}
+
+    def signals(self, df):
+        return self.inner.signals(df)
+
+    def risk(self, base):
+        from dataclasses import replace
+        e = self.exit
+        return replace(base, reward_risk=e["rr"], sl_atr_mult=e["sl"], exit_mode=e["mode"],
+                       trail_atr_mult=e["sl"] if e["mode"] == "trailing" else base.trail_atr_mult,
+                       max_bars=e["max_bars"])
+
+    def __repr__(self) -> str:
+        e = self.exit
+        out = ("Trailing " + f"{e['sl']:g} ATR") if e["mode"] == "trailing" else f"SL {e['sl']:g} ATR, RR 1:{e['rr']:g}"
+        if e["max_bars"]:
+            out += f", max {e['max_bars']} Kerzen"
+        return f"{self.inner!r} | {out}"
+
+
+EXIT_SPACE = {"rr": [1.5, 2.0, 3.0, 4.0, 5.0], "sl": [1.0, 1.5, 2.0, 3.0], "mode": ["fixed"] * 4 + ["trailing"],
+              "max_bars": [0, 0, 12, 24, 48, 96]}
+
+
+def _random_exit(rng) -> dict:
+    return {k: v[rng.integers(len(v))] for k, v in EXIT_SPACE.items()}
+
+
+def sample_variants(family: str, n: int, tried: set, rng, exits: float = 0.7) -> list[Strategy]:
+    """exits: Anteil der Varianten, die zusaetzlich einen zufaelligen Ausstieg bekommen."""
     classes = families()[family]
     out, attempts = [], 0
     while len(out) < n and attempts < n * 50:
@@ -249,6 +285,8 @@ def sample_variants(family: str, n: int, tried: set, rng) -> list[Strategy]:
         if hasattr(cls, "valid") and not cls.valid(params):
             continue
         strat = cls(**params)
+        if exits and rng.random() < exits:
+            strat = WithExit(strat, **_random_exit(rng))
         if repr(strat) in tried or any(repr(o) == repr(strat) for o in out):
             continue
         out.append(strat)
@@ -256,6 +294,9 @@ def sample_variants(family: str, n: int, tried: set, rng) -> list[Strategy]:
 
 
 def _backtest_all(strat, frames, cfg) -> list[Trade]:
+    if isinstance(strat, WithExit):
+        from dataclasses import replace
+        cfg = replace(cfg, risk=strat.risk(cfg.risk))
     ts = []
     for sym, df in frames.items():
         ts += run_backtest(df, strat, cfg, sym, tick=cfg.market(sym).get("tick", 0.0))[0]
@@ -290,7 +331,8 @@ def _score(strat, frames, cfg, start, cut, min_trades, min_pf) -> tuple[str, dic
     st = stats([t.r_multiple for t in tf])
     return repr(strat), {"ok": _ok(tf, start, cut, min_trades, min_pf), "exp": st["expectancy_r"],
                          "trades": st["trades"], "pf": st["profit_factor"],
-                         "cls": type(strat).__name__, "params": strat.params}
+                         "cls": type(getattr(strat, "inner", strat)).__name__, "params": strat.params,
+                         **({"exit": strat.exit} if isinstance(strat, WithExit) else {})}
 
 
 def explore(frames: dict[str, pd.DataFrame], cfg: Config, family: str, state_file: Path, n_new: int = 24,
@@ -340,6 +382,8 @@ def explore(frames: dict[str, pd.DataFrame], cfg: Config, family: str, state_fil
         name, info = good[0]
         cls = {c.__name__: c for c in families()[family]}[info["cls"]]
         strat = cls(**info["params"])
+        if info.get("exit"):
+            strat = WithExit(strat, **info["exit"])
         disc = _backtest_all(strat, disc_frames, cfg)
         filt = learn_filter(disc)
         hold = [t for t in _backtest_all(strat, frames, cfg) if t.entry_time >= cut and filt(t.entry_time, t.atr_pct)]

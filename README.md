@@ -99,15 +99,23 @@ tradingbot learn --family momentum --config config/crypto-learn.yaml   # Krypto 
 Zusaetzlich sucht jede Runde **neue Varianten** (zufaellige Parameter, bereits getestete werden uebersprungen).
 Ausgewaehlt wird nur auf den ersten 75 % der Daten; die letzten 25 % dienen als Pruefung. Je mehr Varianten schon
 geprueft wurden, desto hoeher die Huerde gegen Zufall (90 %, 95 %, ... bis 99,5 %). Ein Fund wird gemeldet
-(Log, Telegram, Obsidian), aber nie automatisch gehandelt. Ueber den Knopf laufen die Schleifen mit 3 Minuten Pause
-und niedriger Prozess-Prioritaet, je Schleife auf der Haelfte der Prozessorkerne und mit 120 neuen Varianten pro Runde.
+(Log, Telegram, Obsidian), aber nie automatisch gehandelt. Ueber den Knopf laufen die Schleifen mit niedriger Prozess-Prioritaet; Kerne, Pause und Varianten pro Runde
+bestimmt die Leistungsstufe im Dashboard (Sparsam, Normal, Hoch, Maximal).
 
 Optional: `OBSIDIAN_LOGBOOK=/Pfad/zur/Logbuch.md` in `.env` schreibt wichtige Ereignisse (Copy-Trades, Funde,
 Zwischenstaende der Suche) automatisch oben ins Obsidian-Logbuch.
 
-Krypto-Scalping mit 5-Minuten-Kerzen ab 2022 (kostenlos von Binance, erster Download einige Minuten, danach
-gespeichert in `data/crypto/raw/binance`):
-`tradingbot learn --family momentum --config config/crypto-scalp.yaml` (so startet es auch der Knopf).
+Krypto laeuft ueber den Knopf jetzt auf **1-Stunden-Kerzen ab 2020** mit Hyperliquid-Gebuehren (0,045 % je Seite):
+`tradingbot learn --family momentum --config config/crypto-swing.yaml`. Grund: Auf 5-Minuten-Kerzen ist der Stop so
+eng, dass die Gebuehren allein rund 1R pro Trade kosten. 5m bleibt moeglich mit `config/crypto-scalp.yaml`.
+
+Weitere Regeln der Suche:
+- **Ausstiege werden mitgelernt**: zu jedem Einstieg probiert die Suche Stop (1 bis 3 x ATR), Ziel (RR 1:1,5 bis 1:5),
+  Trailing-Stop und einen Zeit-Ausstieg (nach 12 bis 96 Kerzen).
+- **Kostenfilter** (`min_stop_cost_mult` in der Config): Trades, deren Stop kleiner als 5 x die Hin-und-Rueck-Gebuehr
+  ist, werden gar nicht erst eroeffnet.
+- **Gegenprobe** (`tests/test_search_canary.py`): eine eingebaute Schummel-Strategie mit echtem Vorteil muss die Suche
+  bestehen, reines Rauschen muss durchfallen. So ist sicher, dass "nichts gefunden" am Markt liegt und nicht an der Suche.
 
 Im Dashboard (und in der Mac-App) laufen beide auch ueber den Start-Knopf in den Reitern Futures/Krypto;
 die Ergebnisse stehen im Reiter **Lernen**.

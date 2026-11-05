@@ -19,6 +19,8 @@ class RiskConfig:
     max_open_positions: int = 2
     exit_mode: str = "fixed"      # "fixed" = SL + TP mit RR 1:3, "trailing" = nachgezogener Stop, kein TP
     trail_atr_mult: float = 3.0   # Abstand des Trailing Stops in ATR
+    max_bars: int = 0             # > 0: Position nach so vielen Kerzen zum Schlusskurs schliessen (Zeit-Ausstieg)
+    min_stop_cost_mult: float = 0.0  # > 0: kein Trade, wenn der Stop naeher ist als x-mal die Gebuehren hin und zurueck
 
 
 @dataclass

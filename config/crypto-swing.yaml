@@ -1,0 +1,43 @@
+# Krypto-Lernschleife mit 1-Stunden-Kerzen von Binance (kostenlos, ab 2020), Gebuehren wie bei Hyperliquid:
+#   tradingbot learn --config config/crypto-swing.yaml --family momentum
+# Warum nicht 5 Minuten? Dort ist der Stop oft nur ~0,2 % weg, die Gebuehren kosten dann ~1R pro Trade.
+# Testkonto 1000 $ (nur Spielgeld).
+mode: paper
+
+markets:               # source binance: Kerzen von Binance statt Yahoo
+  - {symbol: "BTCUSDT",  name: "Bitcoin",   source: binance, point_value: 1.0, lot_step: 0.00001}
+  - {symbol: "ETHUSDT",  name: "Ethereum",  source: binance, point_value: 1.0, lot_step: 0.0001}
+  - {symbol: "SOLUSDT",  name: "Solana",    source: binance, point_value: 1.0, lot_step: 0.01}
+  - {symbol: "BNBUSDT",  name: "BNB",       source: binance, point_value: 1.0, lot_step: 0.001}
+  - {symbol: "XRPUSDT",  name: "XRP",       source: binance, point_value: 1.0, lot_step: 0.1}
+  - {symbol: "DOGEUSDT", name: "Dogecoin",  source: binance, point_value: 1.0, lot_step: 1.0}
+  - {symbol: "ADAUSDT",  name: "Cardano",   source: binance, point_value: 1.0, lot_step: 1.0}
+  - {symbol: "AVAXUSDT", name: "Avalanche", source: binance, point_value: 1.0, lot_step: 0.01}
+  - {symbol: "LINKUSDT", name: "Chainlink", source: binance, point_value: 1.0, lot_step: 0.01}
+
+timeframe: "1h"
+history_period: "2020-01-01"   # bei source binance: ab diesem Datum
+
+account:
+  start_capital: 1000.0
+  fee_per_trade: 0.0
+  fee_pct: 0.045           # Hyperliquid: 0,045 % pro Seite (Taker, ohne Rabatt)
+  slippage_ticks: 0
+
+risk:
+  risk_per_trade_pct: 1.0
+  reward_risk: 3.0
+  atr_period: 14
+  sl_atr_mult: 1.5
+  max_daily_loss_pct: 5.0
+  max_open_positions: 3
+  exit_mode: fixed
+  trail_atr_mult: 3.0
+  min_stop_cost_mult: 5.0  # kein Trade, wenn der Stop naeher ist als 5x die Gebuehren hin und zurueck
+
+selection:
+  train_bars: 2000
+  test_bars: 500
+  min_trades: 30
+  min_profit_factor: 1.2
+  min_win_rate: 0.0

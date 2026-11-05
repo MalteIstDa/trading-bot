@@ -24,7 +24,7 @@ COMMANDS = {
     "copy": (ROOT / "data" / "copy", [*CLI, "traders", "watch", "--config", str(ROOT / "config" / "hyperliquid.yaml")]),
     "futures": (ROOT / "data", [*CLI, "learn", "--family", "ict"]),
     "crypto": (ROOT / "data" / "crypto", [*CLI, "learn", "--family", "momentum",
-                                          "--config", str(ROOT / "config" / "crypto-scalp.yaml")]),
+                                          "--config", str(ROOT / "config" / "crypto-swing.yaml")]),
 }
 LABELS = {"copy": "Copy-Bot", "futures": "Lernschleife", "crypto": "Lernschleife"}
 

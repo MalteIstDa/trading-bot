@@ -320,7 +320,7 @@ const signCls = v => v > 0 ? 'up' : v < 0 ? 'down' : '';
 const signed = (v, f = usd) => v == null ? '–' : `<span class="${signCls(v)}">${v > 0 ? '+' : ''}${f(v)}</span>`;
 const rFmt = v => v == null ? '–' : num(v) + ' R';
 const short = a => a && a.length > 12 ? a.slice(0, 6) + '…' + a.slice(-4) : (a || '–');
-const REASON = { tp: 'Ziel (TP)', sl: 'Stop (SL)', trail: 'Trailing Stop', trader_exit: 'Trader ausgestiegen', manual: 'Manuell' };
+const REASON = { tp: 'Ziel (TP)', sl: 'Stop (SL)', trail: 'Trailing Stop', time: 'Zeit-Ausstieg', end: 'Testende', trader_exit: 'Trader ausgestiegen', manual: 'Manuell' };
 const reasonName = r => REASON[r] || r;
 const toTime = iso => Math.floor(Date.parse(iso) / 1000);
 const coinOf = s => String(s).replace(/-USD$/, '');
